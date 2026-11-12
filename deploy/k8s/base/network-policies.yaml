@@ -1,0 +1,61 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-default-deny
+spec:
+  # Shared ownership labels isolate these four application roles from other namespace workloads.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: django-template
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-from-cloudflare-tunnel
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+      app.kubernetes.io/part-of: django-template
+  policyTypes: [Ingress]
+  ingress:
+    # Both selectors must match the same source Pod; other namespaces get no API access.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudflare-tunnel
+          podSelector:
+            matchLabels:
+              app: cloudflared
+      ports:
+        - protocol: TCP
+          port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-required-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: django-template
+  policyTypes: [Egress]
+  egress:
+    # These portable rules constrain ports, not hosts. Standard NetworkPolicy cannot name
+    # external DNS destinations. Replace them with verified subnet/ipBlock rules when known.
+    # DNS supports TCP fallback; DB and broker connections use separately provisioned endpoints.
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 6380
+        # The init gate reaches Kubernetes over HTTPS; Azure identity uses HTTPS as needed.
+        - protocol: TCP
+          port: 443

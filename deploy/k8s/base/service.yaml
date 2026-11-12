@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - name: http
+      # The existing cloudflared service route uses port 80 while Gunicorn remains on 8000.
+      port: 80
+      targetPort: http
+  type: ClusterIP

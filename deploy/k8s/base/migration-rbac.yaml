@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backend-migration-gate
+rules:
+  # Gate processes may inspect exactly this Job, without listing or changing cluster objects.
+  - apiGroups: [batch]
+    resources: [jobs]
+    resourceNames: [backend-migrate]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-migration-gate
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backend-migration-gate
+subjects:
+  # Kustomize assigns the environment namespace to this namespaced ServiceAccount reference.
+  - kind: ServiceAccount
+    name: backend-runtime

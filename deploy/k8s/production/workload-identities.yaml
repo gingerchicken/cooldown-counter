@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-runtime
+  annotations:
+    # Production uses a separate runtime identity and a production-only federated subject.
+    azure.workload.identity/client-id: replace-with-production-runtime-client-id
+    azure.workload.identity/tenant-id: replace-with-azure-tenant-id
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-migrations
+  annotations:
+    # Never reuse the runtime identity for schema-owner database access.
+    azure.workload.identity/client-id: replace-with-production-migration-client-id
+    azure.workload.identity/tenant-id: replace-with-azure-tenant-id

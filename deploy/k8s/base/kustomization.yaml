@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Namespace, image digest, identity and Key Vault references belong to each environment.
+resources:
+  - backend.yaml
+  - worker.yaml
+  - beat.yaml
+  - service.yaml
+  - migration-job.yaml
+  - service-accounts.yaml
+  - migration-rbac.yaml
+  - secret-provider-classes.yaml
+  - network-policies.yaml
+configurations:
+  - name-reference.yaml
+# The three runtime roles share identity, secret mounting and an init-only migration gate.
+patches:
+  - path: runtime-pod-patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+# The content hash changes when settings change, restarting roles and the migration gate together.
+configMapGenerator:
+  - name: backend-config
+    literals:
+      - DJANGO_DEBUG=false
+      - DJANGO_SECURE_COOKIES=true
+      - BEAT_INTERVAL_SECONDS=60

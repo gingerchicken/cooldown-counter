@@ -1,0 +1,45 @@
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: backend-runtime-kv
+spec:
+  parameters:
+    # Production secret identifiers reference its own vault and its own runtime identity.
+    clientID: replace-with-production-runtime-client-id
+    keyvaultName: replace-with-production-key-vault
+    tenantId: replace-with-azure-tenant-id
+    objects: |
+      array:
+        - |
+          objectName: django-template-production-django-secret-key
+          objectType: secret
+          objectAlias: DJANGO_SECRET_KEY
+        - |
+          objectName: django-template-production-database-url
+          objectType: secret
+          objectAlias: DATABASE_URL
+        - |
+          objectName: django-template-production-celery-broker-url
+          objectType: secret
+          objectAlias: CELERY_BROKER_URL
+---
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: backend-migrations-kv
+spec:
+  parameters:
+    # Both roles share Django's signing key, but schema-owner credentials stay migration-only.
+    clientID: replace-with-production-migration-client-id
+    keyvaultName: replace-with-production-key-vault
+    tenantId: replace-with-azure-tenant-id
+    objects: |
+      array:
+        - |
+          objectName: django-template-production-django-secret-key
+          objectType: secret
+          objectAlias: DJANGO_SECRET_KEY
+        - |
+          objectName: django-template-production-migration-database-url
+          objectType: secret
+          objectAlias: DATABASE_URL

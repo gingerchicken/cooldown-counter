@@ -1,0 +1,8 @@
+# The init gate stores the generated ConfigMap name as a string for Job identity checks.
+# Include this field in name hashing as well as Kubernetes' standard envFrom references.
+nameReference:
+  - kind: ConfigMap
+    version: v1
+    fieldSpecs:
+      - kind: Deployment
+        path: spec/template/spec/initContainers/env/value

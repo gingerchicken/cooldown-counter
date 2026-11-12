@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Interview Questions"
+  short_description: "Turn project unknowns into simple interview questions"
+  default_prompt: "Use $write-interview-questions to turn these unknowns into simple, traceable interview questions."

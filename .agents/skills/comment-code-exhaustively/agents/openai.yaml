@@ -1,0 +1,14 @@
+interface:
+  display_name: Comment Code Exhaustively
+  short_description: Add exhaustive human-readable code comments
+  default_prompt: Use $comment-code-exhaustively to document this codebase with meaningful
+    inline comments, API docs, and verified design rationale.
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true

@@ -1,0 +1,4 @@
+# Compose already supplies these local-only bindings on the command line.
+# Only copy this file when running a custom Wrangler container on the Compose network.
+BACKEND_ORIGIN="http://backend:8000"
+ALLOW_INSECURE_BACKEND="true"

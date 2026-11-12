@@ -1,0 +1,526 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Django template API",
+        "version": "1.0.0",
+        "description": "Session authentication, account-owned background jobs, and scheduler health."
+    },
+    "paths": {
+        "/api/auth/login/": {
+            "post": {
+                "operationId": "auth_login_create",
+                "description": "Validate credentials once and return a generic failure when Django rejects them.",
+                "tags": [
+                    "auth"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/LoginRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthenticatedSession"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AuthenticationError"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/auth/logout/": {
+            "post": {
+                "operationId": "auth_logout_create",
+                "description": "Remove authenticated session state without changing any account-owned job history.",
+                "tags": [
+                    "auth"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Session"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/auth/session/": {
+            "get": {
+                "operationId": "auth_session_retrieve",
+                "description": "Return the authenticated user or null; no credentials are included.",
+                "tags": [
+                    "auth"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    },
+                    {}
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Session"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/csrf/": {
+            "get": {
+                "operationId": "csrf_retrieve",
+                "description": "Return the token without making its HttpOnly cookie readable to JavaScript.",
+                "tags": [
+                    "csrf"
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Csrf"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/health/": {
+            "get": {
+                "operationId": "health_retrieve",
+                "description": "Confirm that this Gunicorn process can answer an HTTP request.",
+                "tags": [
+                    "health"
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Health"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/heartbeat/": {
+            "get": {
+                "operationId": "heartbeat_retrieve",
+                "description": "Return null until Beat has dispatched a task and a worker has executed it.",
+                "tags": [
+                    "heartbeat"
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Heartbeat"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/jobs/": {
+            "get": {
+                "operationId": "jobs_list",
+                "description": "List the signed-in account's work or queue a validated new message.",
+                "tags": [
+                    "jobs"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Job"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "jobs_create",
+                "description": "List the signed-in account's work or queue a validated new message.",
+                "tags": [
+                    "jobs"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/JobRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/JobRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/JobRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Job"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/jobs/{id}/": {
+            "get": {
+                "operationId": "jobs_retrieve",
+                "description": "Poll a durable result without exposing another account's job IDs.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "jobs"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Job"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/ready/": {
+            "get": {
+                "operationId": "ready_retrieve",
+                "description": "Check the API's database connection without leaking connection details.",
+                "tags": [
+                    "ready"
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Health"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "503": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "AuthenticatedSession": {
+                "type": "object",
+                "description": "A successful login always returns a real account without secret account fields.",
+                "properties": {
+                    "user": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/User"
+                            }
+                        ],
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "user"
+                ]
+            },
+            "AuthenticationError": {
+                "type": "object",
+                "description": "Authentication failures share one generic detail without revealing account existence.",
+                "properties": {
+                    "detail": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "detail"
+                ]
+            },
+            "Csrf": {
+                "type": "object",
+                "description": "A masked CSRF token is returned in JSON because its cookie is HttpOnly.",
+                "properties": {
+                    "csrfToken": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "csrfToken"
+                ]
+            },
+            "Health": {
+                "type": "object",
+                "description": "Minimal probe output deliberately excludes secrets and infrastructure details.",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/HealthStatusEnum"
+                    }
+                },
+                "required": [
+                    "status"
+                ]
+            },
+            "HealthStatusEnum": {
+                "enum": [
+                    "ok"
+                ],
+                "type": "string",
+                "description": "* `ok` - ok"
+            },
+            "Heartbeat": {
+                "type": "object",
+                "description": "Missing scheduler execution remains null rather than looking like a successful run.",
+                "properties": {
+                    "last_run_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "last_run_at"
+                ]
+            },
+            "Job": {
+                "type": "object",
+                "description": "Expose durable worker output while keeping account ownership server-controlled.",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "message": {
+                        "type": "string",
+                        "maxLength": 200
+                    },
+                    "status": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/JobStatusEnum"
+                            }
+                        ],
+                        "readOnly": true
+                    },
+                    "result": {
+                        "type": "string",
+                        "readOnly": true
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "message",
+                    "result",
+                    "status",
+                    "updated_at"
+                ]
+            },
+            "JobRequest": {
+                "type": "object",
+                "description": "Expose durable worker output while keeping account ownership server-controlled.",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            },
+            "JobStatusEnum": {
+                "enum": [
+                    "pending",
+                    "succeeded",
+                    "failed"
+                ],
+                "type": "string",
+                "description": "* `pending` - Pending\n* `succeeded` - Succeeded\n* `failed` - Failed"
+            },
+            "LoginRequest": {
+                "type": "object",
+                "description": "Validate bounded credentials without ever serializing a password in a response.",
+                "properties": {
+                    "username": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150
+                    },
+                    "password": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "minLength": 1,
+                        "maxLength": 4096
+                    }
+                },
+                "required": [
+                    "password",
+                    "username"
+                ]
+            },
+            "Session": {
+                "type": "object",
+                "description": "Represent a signed-out browser with null rather than an authentication error.",
+                "properties": {
+                    "user": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/User"
+                            }
+                        ],
+                        "readOnly": true,
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "user"
+                ]
+            },
+            "User": {
+                "type": "object",
+                "description": "Expose only the stable identity needed by the authenticated frontend.",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "readOnly": true
+                    },
+                    "username": {
+                        "type": "string",
+                        "readOnly": true
+                    }
+                },
+                "required": [
+                    "id",
+                    "username"
+                ]
+            }
+        },
+        "securitySchemes": {
+            "cookieAuth": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "sessionid"
+            }
+        }
+    }
+}

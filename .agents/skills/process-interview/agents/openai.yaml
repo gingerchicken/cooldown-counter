@@ -1,0 +1,4 @@
+interface:
+  display_name: "Process Interview"
+  short_description: "Transcribe and route recorded interviews"
+  default_prompt: "Use $process-interview to transcribe these meeting recordings and update the affected interview-cycle documentation."

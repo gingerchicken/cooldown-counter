@@ -1,0 +1,71 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: django-template-production
+resources:
+  - ../base
+  - namespace.yaml
+# Production hosts, revision and credentials remain independent from staging.
+configMapGenerator:
+  - name: backend-config
+    behavior: merge
+    envs:
+      - settings.env
+replicas:
+  - name: backend
+    count: 2
+  - name: worker
+    count: 2
+  - name: beat
+    count: 1
+images:
+  - name: template-backend
+    newName: ghcr.io/hbh-bits-and-bobs/django-template-backend
+    # Replace newTag with digest: sha256:<verified-release-digest> before activation.
+    newTag: replace-with-verified-release
+patches:
+  - path: workload-identities.yaml
+  - path: key-vault.yaml
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: backend
+    patch: |
+      # Probe Host values must track the production ALLOWED_HOSTS entries.
+      - op: replace
+        path: /spec/template/spec/containers/0/startupProbe/httpGet/httpHeaders/0/value
+        value: api.example.invalid
+      - op: replace
+        path: /spec/template/spec/containers/0/livenessProbe/httpGet/httpHeaders/0/value
+        value: api.example.invalid
+      - op: replace
+        path: /spec/template/spec/containers/0/readinessProbe/httpGet/httpHeaders/0/value
+        value: api.example.invalid
+# Both init gate invariants come from the transformed Job rather than independently edited strings.
+replacements:
+  - source:
+      group: batch
+      version: v1
+      kind: Job
+      name: backend-migrate
+      fieldPath: spec.template.spec.containers.0.image
+    targets:
+      - select:
+          group: apps
+          version: v1
+          kind: Deployment
+        fieldPaths:
+          - spec.template.spec.initContainers.[name=wait-for-migrations].env.[name=EXPECTED_MIGRATION_IMAGE].value
+  - source:
+      group: batch
+      version: v1
+      kind: Job
+      name: backend-migrate
+      fieldPath: spec.template.spec.containers.0.envFrom.0.configMapRef.name
+    targets:
+      - select:
+          group: apps
+          version: v1
+          kind: Deployment
+        fieldPaths:
+          - spec.template.spec.initContainers.[name=wait-for-migrations].env.[name=EXPECTED_MIGRATION_CONFIG].value

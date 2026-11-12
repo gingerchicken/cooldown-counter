@@ -1,0 +1,16 @@
+# Build contexts include source and lockfiles, never local installations or secrets.
+.git
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.wrangler
+**/dist
+**/test-results
+**/playwright-report
+**/coverage
+**/*.sqlite3
+.env
+.env.*
+**/.dev.vars*

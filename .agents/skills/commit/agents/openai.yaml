@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit Changes"
+  short_description: "Create focused commits with clear messages"
+  default_prompt: "Use $commit to inspect and commit the current changes with a clear, focused message."

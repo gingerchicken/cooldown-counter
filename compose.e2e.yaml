@@ -1,0 +1,34 @@
+# Use a separate Compose project for this overlay so test cleanup never deletes
+# development data. The local entry script assigns its own project automatically.
+x-runtime-backend: &runtime-backend
+  # Stories test the deployed image without source mounts or development watchers.
+  image: ${COMPOSE_PROJECT_NAME:-django-template}-backend:local
+  build:
+    context: ./backend
+    target: runtime
+
+services:
+  migrate:
+    <<: *runtime-backend
+    # Compose's reset tag must be attached directly to each service, not hidden in an alias.
+    volumes: !reset []
+  backend:
+    <<: *runtime-backend
+    volumes: !reset []
+    command: [gunicorn, config.wsgi:application, --bind, "0.0.0.0:8000", --workers, "2", --access-logfile, "-"]
+  worker:
+    <<: *runtime-backend
+    volumes: !reset []
+    command: [celery, -A, config, worker, --loglevel=INFO, --concurrency=2, --hostname=worker@%h]
+  beat:
+    <<: *runtime-backend
+    volumes: !reset []
+    command: [celery, -A, config, beat, --scheduler, "django_celery_beat.schedulers:DatabaseScheduler", --loglevel=INFO, "--pidfile="]
+    environment:
+      BEAT_INTERVAL_SECONDS: "3"
+  # Tests use container DNS and need no host ports or hot-reloading frontend.
+  web:
+    ports: !reset []
+    volumes: !reset []
+  vite:
+    profiles: [development]

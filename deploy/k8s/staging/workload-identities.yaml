@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-runtime
+  annotations:
+    # Federate only this namespace/ServiceAccount subject with the staging runtime identity.
+    azure.workload.identity/client-id: replace-with-staging-runtime-client-id
+    azure.workload.identity/tenant-id: replace-with-azure-tenant-id
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-migrations
+  annotations:
+    # Schema-owner credentials belong to a separately scoped migration identity.
+    azure.workload.identity/client-id: replace-with-staging-migration-client-id
+    azure.workload.identity/tenant-id: replace-with-azure-tenant-id

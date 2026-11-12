@@ -1,0 +1,218 @@
+name: Test and publish
+
+on:
+  pull_request:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Pull requests only receive read access. The final publication job explicitly
+# requests package writes after every verification job has passed.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend lint and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check backend in Docker
+        run: ./local-dev.sh test backend
+      - name: Upload backend evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: backend-tests
+          path: |
+            backend/coverage.xml
+            frontend/test-results/docker-compose.log
+            test-artifacts/
+          if-no-files-found: ignore
+      - name: Stop job containers
+        if: always()
+        run: docker compose --profile test down --volumes --remove-orphans
+
+  frontend:
+    name: Frontend lint, types, unit tests, and Pages build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Check frontend in Docker
+        run: ./local-dev.sh test frontend
+      - name: Upload frontend evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: frontend-unit-tests
+          path: |
+            frontend/coverage/
+            frontend/test-results/docker-compose.log
+            test-artifacts/
+          if-no-files-found: ignore
+      - name: Stop job containers
+        if: always()
+        run: docker compose --profile test down --volumes --remove-orphans
+
+  browser:
+    name: Browser component tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Run component tests in Docker browsers
+        run: ./local-dev.sh test browser
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: component-browser-tests
+          path: |
+            frontend/test-results/
+            test-artifacts/
+          if-no-files-found: ignore
+      - name: Stop job containers
+        if: always()
+        run: docker compose --profile test down --volumes --remove-orphans
+
+  api-client:
+    name: Generated API contract and package drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Regenerate the backend schema and TypeScript package in Docker
+        run: ./local-dev.sh api-client
+      - name: Reject stale generated contracts
+        # The checked-in contract must match both the Django serializer schema
+        # and its generated TypeScript interface on every branch.
+        run: git diff --exit-code -- backend/openapi.json frontend/packages/api-client/src/schema.d.ts
+      - name: Stop job containers
+        if: always()
+        run: docker compose --profile test down --volumes --remove-orphans
+
+  e2e:
+    name: Full Docker stack user stories
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Run stories against Pages, Gunicorn, PostgreSQL, Redis, Celery, and Beat
+        # The script gives this run its own Compose project and always tears it
+        # down, including when a browser assertion or startup health check fails.
+        run: ./local-dev.sh test e2e
+      - name: Upload story reports, traces, and stack logs
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: full-stack-stories
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+            test-artifacts/
+          if-no-files-found: ignore
+
+  kubernetes:
+    name: Validate staging and production GitOps overlays
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Validate Compose configuration
+        run: |
+          docker compose --profile test config --quiet
+          docker compose -f compose.yaml -f compose.e2e.yaml --profile test config --quiet
+      - name: Keep E2E isolated from development reloaders
+        # A syntactically valid YAML reset inside an alias can leave source mounts active.
+        # Inspect the merged configuration so stories always exercise baked runtime code.
+        run: |
+          docker compose -f compose.yaml -f compose.e2e.yaml --profile test config --format json | \
+            docker run --rm -i node:24-bookworm-slim node --input-type=module -e '
+              import assert from "node:assert/strict";
+              // configurationText collects the JSON written by Compose on standard input.
+              let configurationText = "";
+              for await (const configurationChunk of process.stdin) {
+                // Each chunk belongs to the same merged Compose document.
+                configurationText += configurationChunk;
+              }
+              // services contains resolved service definitions after all overlay merges.
+              const { services } = JSON.parse(configurationText);
+              for (const serviceName of ["backend", "worker", "beat", "migrate"]) {
+                // service must use the production build and never depend on mounted source.
+                const service = services[serviceName];
+                assert.equal(service.build.target, "runtime", serviceName);
+                assert.deepEqual(service.volumes ?? [], [], serviceName);
+                assert.ok(!service.command.includes("watchfiles"), serviceName);
+                assert.ok(!service.command.includes("--reload"), serviceName);
+              }
+              assert.deepEqual(services.web.volumes ?? [], [], "web");
+            '
+      - name: Validate workflow syntax and embedded shell
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.11
+      - name: Validate the Docker development entry script
+        run: docker run --rm -v "$PWD:/work:ro" koalaman/shellcheck:v0.11.0 /work/local-dev.sh
+      - name: Validate environment overlays and copied GitOps release gates in Docker
+        run: ./local-dev.sh test deployment
+      - name: Upload rendered GitOps manifests
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: kubernetes-manifests
+          path: test-artifacts/kubernetes/
+
+  publish-backend:
+    name: Publish the single backend image to GHCR
+    needs: [backend, frontend, browser, api-client, e2e, kubernetes]
+    if: github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Authenticate to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate release tags
+        id: metadata
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ghcr.io/${{ github.repository }}-backend
+          tags: |
+            type=sha,format=long
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Build and publish Gunicorn, worker, Beat, and migration image
+        id: publish
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: backend
+          target: runtime
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=backend-runtime
+          cache-to: type=gha,mode=max,scope=backend-runtime
+          provenance: true
+          sbom: true
+      - name: Record the immutable deployment reference
+        env:
+          IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
+          IMAGE_TAGS: ${{ steps.metadata.outputs.tags }}
+        run: |
+          {
+            printf 'Published backend image digest: %s\n\n' "$IMAGE_DIGEST"
+            printf 'Published tags:\n%s\n' "$IMAGE_TAGS"
+            printf '\nKubernetes deployment is manual. No cluster credentials or automatic deploy steps are configured.\n'
+          } >> "$GITHUB_STEP_SUMMARY"

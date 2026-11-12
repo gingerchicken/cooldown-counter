@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "django-react-template",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-11-09",
+  // Safe deployment defaults. Compose overrides these bindings for local HTTP.
+  "vars": {
+    "BACKEND_ORIGIN": "https://api.example.invalid",
+    "ALLOW_INSECURE_BACKEND": "false"
+  },
+  // Preview deployments need their own backend and Django trusted origins.
+  "env": {
+    "preview": {
+      "vars": {
+        "BACKEND_ORIGIN": "https://preview-api.example.invalid",
+        "ALLOW_INSECURE_BACKEND": "false"
+      }
+    },
+    "production": {
+      "vars": {
+        "BACKEND_ORIGIN": "https://api.example.invalid",
+        "ALLOW_INSECURE_BACKEND": "false"
+      }
+    }
+  }
+}
