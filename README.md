@@ -1,5 +1,12 @@
 # Django + React template
 
+Cooldown Counter product discovery is recorded in the
+[user stories](2-user-stories/README.md) and
+[candidate requirements](3-requirements/requirements.md), with the
+[supplied design and evidence limits](docs/design/README.md). The application
+below is still the imported template; these records do not claim the tracker
+has been implemented.
+
 Django, React, TypeScript, Vite, PostgreSQL, Redis, Celery, Beat, and Gunicorn.
 Cloudflare Pages serves the static frontend; a Pages Function forwards `/api`
 to Django. Development and every test runner run in Docker containers.

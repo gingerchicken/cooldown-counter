@@ -1,0 +1,49 @@
+# US-044 - Update offence labels and trigger notes
+
+**Status:** Draft - not usable.
+
+As a [fleet operator](../1-user-profiles/UP-001-fleet-operator.md), I want to edit an offence type name, code and note, so that I can correct how the catalogue describes an offence.
+
+**Evidence:** Visible. Source lines: [2724-2724](../docs/design/cooldown-counter.html#L2724), [2957-3040](../docs/design/cooldown-counter.html#L2957), [3458-3458](../docs/design/cooldown-counter.html#L3458), [3513-3516](../docs/design/cooldown-counter.html#L3513), [3539-3544](../docs/design/cooldown-counter.html#L3539).
+
+**Rationale and smallest useful outcome:** Edit preloads the current metadata and short-code normalisation is explicit in save logic.
+
+**Dependencies:** [US-042](US-042-rule-add-type.md), [US-043](US-043-rule-type-name-validity.md)
+
+**Requirements:** [RQ-271](../3-requirements/requirements.md#rq-271), [RQ-272](../3-requirements/requirements.md#rq-272), [RQ-273](../3-requirements/requirements.md#rq-273), [RQ-274](../3-requirements/requirements.md#rq-274), [RQ-275](../3-requirements/requirements.md#rq-275), [RQ-276](../3-requirements/requirements.md#rq-276).
+
+**Constraints and questions:** [Q-056](../3-requirements/open-questions.md#q-056)
+The [shared evidence limits](../docs/design/README.md) apply.
+
+**Named delivery:** Cooldown Counter design baseline v0.1.
+
+**MoSCoW:** Should Have - Provisional. Useful support for the represented workflow; a manual workaround may be tolerable.
+
+**Omission consequence:** Omitting this outcome leaves the operator unable to edit an offence type name, code and note through this product.
+
+**Workaround:** Manual inspection or an external record is a possible workaround; its acceptability has not been confirmed.
+
+**Assigned by:** Assistant, 2026-11-12. Product decision-maker: unassigned;
+confirmation pending. No effort estimate or release commitment is implied.
+
+## Acceptance and Example Mapping
+
+Rule set [BR-044](../3-requirements/requirements.md#br-044) and example
+[EX-044](../3-requirements/requirements.md#ex-044) preserve
+the trigger, input, action, expected outcome and boundary cases. Each linked
+requirement states its own acceptance condition and planned verification.
+No acceptance result is claimed. The unanswered questions above are the handoff
+for product review; do not implement an arbitrary answer.
+
+## INVEST
+
+| Criterion | Result | Reason |
+| --- | --- | --- |
+| Independent | Pass | One outcome has separate acceptance; recorded dependencies are explicit. |
+| Negotiable | Pass | The outcome is separate from stack, storage and implementation choices. |
+| Valuable | Pass | The stated operator benefit is a design-derived hypothesis requiring validation. |
+| Estimable | Fail | Material behavior or scope questions remain; resolve the linked decisions before estimating. |
+| Small | Pass | One coherent outcome; its atomic rules share a single purpose. |
+| Testable | Fail | Proposed checks exist, but linked decisions can change the accepted result. |
+
+Correction: resolve the linked decisions, update the acceptance examples, and repeat the INVEST check. This draft must not be treated as ready for implementation.
