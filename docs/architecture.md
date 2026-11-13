@@ -1,5 +1,44 @@
 # Architecture
 
+## Tracker domain
+
+The [ER model](data-model.md) defines the current product boundaries. `tracker`
+owns fleet membership, exact Steam-account identities, immutable policy versions,
+saved cooldown assessments, append-only observations and attributed audit entries.
+The user selected separate fleets with membership permissions and preservation
+of historical rules/evidence. Django's existing session login remains the identity
+boundary; membership determines what that identity can read and change.
+
+Pure prediction functions accept explicit aware timestamps and saved same-ladder
+history. They have no database or browser dependency. Command services enforce
+cross-row invariants inside transactions, while query projections provide typed
+read models. Views are thin permission/serialization boundaries. Published policy
+versions and saved assessments are not edited through application services.
+
+Account row locks serialize evidence revisions and idempotent event/observation
+acceptance. Fleet row locks protect the last-owner invariant. Policy publication
+locks the offence identity before assigning its next version number. A stale
+history/policy preview receives a conflict rather than a silently changed result.
+PostgreSQL concurrency tests exercise those real lock boundaries.
+
+`platform_tools` owns schema export/watch commands and ordinary operator
+provisioning, independently of the retained template jobs app. Schema generation
+writes a validated sibling file and atomically replaces only changed output.
+Development watchers use fresh Django subprocesses to avoid stale module imports.
+The frontend watcher serializes/coalesces generation and client builds. A backend
+directory bind mount exposes atomic replacements; a single-file mount would keep
+the obsolete inode. Watchers run only in the development profile, not E2E or the
+published runtime stack.
+
+The frontend groups presentation and interaction units under `src/tracker/`.
+Generated OpenAPI types are the source of request/response shapes. The tracker
+adapter uses the existing session/CSRF transport and confirms identity before
+interpreting a permission-denied response as an expired login. Calendar layout,
+filtering and formatting are presentation helpers; escalation remains in Python.
+
+The background-job domain below is retained infrastructure compatibility. It is
+not the product workspace or a substitute for tracker acceptance tests.
+
 ## Boundaries
 
 The template has two language boundaries. `backend/` owns Python and the API

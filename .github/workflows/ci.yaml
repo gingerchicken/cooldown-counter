@@ -30,8 +30,11 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: backend-tests
+          # The root README fixes a consistent repository-relative archive layout for evidence assembly.
           path: |
+            README.md
             backend/coverage.xml
+            backend/test-results/
             frontend/test-results/docker-compose.log
             test-artifacts/
           if-no-files-found: ignore
@@ -53,7 +56,9 @@ jobs:
         with:
           name: frontend-unit-tests
           path: |
+            README.md
             frontend/coverage/
+            frontend/test-results/unit.json
             frontend/test-results/docker-compose.log
             test-artifacts/
           if-no-files-found: ignore
@@ -75,6 +80,8 @@ jobs:
         with:
           name: component-browser-tests
           path: |
+            README.md
+            frontend/coverage/browser/
             frontend/test-results/
             test-artifacts/
           if-no-files-found: ignore
@@ -114,10 +121,42 @@ jobs:
         with:
           name: full-stack-stories
           path: |
+            README.md
             frontend/playwright-report/
             frontend/test-results/
             test-artifacts/
           if-no-files-found: ignore
+
+  acceptance:
+    name: Verify combined requirement evidence
+    needs: [backend, frontend, browser, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Download executed test reports
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --name backend-tests --name frontend-unit-tests \
+            --name component-browser-tests --name full-stack-stories --dir /tmp/cooldown-acceptance
+          # Each independently uploaded artifact retains the repository-relative report paths.
+          for artifact_directory in /tmp/cooldown-acceptance/*; do
+            cp -R "$artifact_directory/." .
+          done
+      - name: Verify every mapped assertion against its actual runner result
+        run: ./local-dev.sh acceptance
+      - name: Upload combined acceptance proof
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: combined-acceptance
+          path: frontend/test-results/acceptance-combined.*
+          if-no-files-found: error
 
   kubernetes:
     name: Validate staging and production GitOps overlays
@@ -168,7 +207,7 @@ jobs:
 
   publish-backend:
     name: Publish the single backend image to GHCR
-    needs: [backend, frontend, browser, api-client, e2e, kubernetes]
+    needs: [backend, frontend, browser, api-client, e2e, acceptance, kubernetes]
     if: github.event_name != 'pull_request' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 20

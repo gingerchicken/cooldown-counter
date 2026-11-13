@@ -211,10 +211,36 @@ for worker_index in range(2):
             password=os.environ["E2E_PASSWORD"],
         )
 '
+  # Validate real case/catalog references before executing any browser acceptance claims.
+  docker compose -f compose.yaml -f compose.e2e.yaml run --rm --no-deps e2e \
+    node tooling/acceptance.mjs --validate --catalog ../2-user-stories/README.md \
+    --requirements ../3-requirements/requirements.md
   # Pass explicit Playwright options as argv, preserving quoting without shell evaluation.
   docker compose -f compose.yaml -f compose.e2e.yaml run --rm --no-deps -e E2E_PASSWORD e2e \
     npm run test:e2e -- "$@"
+  if [ "$#" -gt 0 ]; then
+    # Filtered diagnostic runs cannot prove the complete story matrix.
+    printf '%s\n' 'Browser run with explicit options passed; run without options for the default acceptance report.'
+    exit 0
+  fi
+  # Only completed clean executions may produce a passing outcome acceptance report.
+  docker compose -f compose.yaml -f compose.e2e.yaml run --rm --no-deps e2e \
+    node tooling/acceptance.mjs --report test-results/e2e.json --output test-results/acceptance \
+    --catalog ../2-user-stories/README.md --requirements ../3-requirements/requirements.md
 )
+
+## Assemble acceptance proof from completed backend, unit, component and full-stack reports.
+report_acceptance() {
+  # The source tree is read-only; only generated acceptance artifacts may change during proof assembly.
+  docker run --rm --user "$LOCAL_UID:$LOCAL_GID" \
+    -v "$PROJECT_ROOT:/workspace:ro" \
+    -v "$PROJECT_ROOT/frontend/test-results:/workspace/frontend/test-results" \
+    -w /workspace/frontend node:24-bookworm-slim node tooling/acceptance.mjs \
+    --report test-results/e2e.json --output test-results/acceptance-combined \
+    --catalog ../2-user-stories/README.md --requirements ../3-requirements/requirements.md \
+    --backend-report ../backend/test-results/backend.xml \
+    --unit-report test-results/unit.json --component-report test-results/browser.json
+}
 
 ## Describe the supported entry points without requiring host language runtimes.
 usage() {
@@ -231,6 +257,7 @@ Usage: ./local-dev.sh [command]
   shell                    Open the Django shell in the backend container
   migrate                  Apply Django migrations in the backend container
   api-client               Regenerate OpenAPI, TypeScript types, and client package
+  acceptance               Verify combined acceptance from the latest complete test reports
   test backend             Backend lint, format, unit/API tests, and migration checks
   test frontend            Frontend lint, types, unit tests, build, and Pages bundle
   test browser             Component tests in real browsers
@@ -286,7 +313,7 @@ case "$development_command" in
       browser) test_browser ;;
       deployment) test_deployment ;;
       e2e) test_e2e "${@:2}" ;;
-      all) test_backend; test_frontend; test_browser; test_deployment; test_e2e ;;
+      all) test_backend; test_frontend; test_browser; test_deployment; test_e2e; report_acceptance ;;
       *) usage >&2; exit 2 ;;
     esac
     ;;
@@ -298,6 +325,7 @@ case "$development_command" in
     fi
     compose down --volumes --remove-orphans
     ;;
+  acceptance) report_acceptance ;;
   help|--help|-h) usage ;;
   *) usage >&2; exit 2 ;;
 esac

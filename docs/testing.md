@@ -1,141 +1,193 @@
-# Test strategy
+# Testing and acceptance
 
-All supported commands run their test tools in containers. The host only needs
-Docker Compose. Run `./local-dev.sh test all` for the full local gate. The same
-entry points are used in GitHub Actions.
+Use the Docker entry script for every supported test layer. Tests must not need
+host Python, Node, PostgreSQL or browser installations. A passing layer proves
+only the behaviors it exercised; a source tag or a coverage percentage is not
+proof that every requirement is satisfied.
 
 ## Layers
 
-| Area | Files | Runner | Main evidence |
-| --- | --- | --- | --- |
-| Python unit and API | `backend/tests/test_*.py` | pytest + pytest-django | Credentials, account ownership, CSRF, task execution, scheduler configuration |
-| Frontend unit | Colocated `frontend/**/*.test.*` | Vitest in Node | Client transport, errors, concurrency, proxy behaviour, lint contract |
-| Browser components | Colocated `frontend/**/*.browser.test.*` | Vitest browser mode + Playwright | Real rendering, keyboard and form interaction, visible states |
-| Full-stack stories | `frontend/e2e/*.test.ts` | Playwright | Real Pages, Gunicorn, PostgreSQL, Redis, Celery, and Beat |
-| Generated API | Schema and generated declarations | Django + OpenAPI TypeScript | Reproducible contract and frontend/backend type agreement |
-| Deployment configuration | Compose, Pages bundle, staging/production overlays | Docker Compose, Wrangler, Kubernetes validators | Configuration syntax, copyability, release pins, and migration ordering |
+| Layer | Command | Evidence |
+| --- | --- | --- |
+| Backend unit, model, service and API | `./local-dev.sh test backend` | Ruff, pytest statement/branch coverage, Django checks and migration drift |
+| Frontend unit and tooling | `./local-dev.sh test frontend` | ESLint, TypeScript, Vitest, code-generation watcher tests, build and Pages Function compilation |
+| Browser components | `./local-dev.sh test browser` | Actual Chromium controls, forms, modals, keyboard interaction and component coverage through Playwright |
+| Full-stack acceptance | `./local-dev.sh test e2e` | Real Pages -> Gunicorn -> PostgreSQL, real Django login/CSRF, Chromium/Firefox/WebKit, reports and failure traces |
+| Deployment contracts | `./local-dev.sh test deployment` | Kubernetes rendering/schema checks, copied GitOps layouts, real PostgreSQL migration locking and release-gate checks |
+| Combined gate | `./local-dev.sh test all` | Every layer, stopping on a failed command |
 
-Unit test discovery excludes `*.browser.test.*` and E2E stories so browser-only
-APIs never execute in Node. Browser mode only selects component test files.
-Playwright only selects `frontend/e2e/`. Keep frontend tests beside the source
-they check; E2E stories are the deliberate cross-application exception.
+The combined gate also runs `./local-dev.sh acceptance` after all runners finish.
+That command assembles proof from the real backend JUnit, unit/component Vitest
+JSON and full-stack Playwright JSON. Missing or failed named assertions cannot
+be promoted to passes. Use `./local-dev.sh test e2e --project=chromium --grep
+'REPORT-002' --retries=0` for a filtered diagnostic run; filtered runs do not
+produce a complete acceptance claim.
 
-## User stories
+The backend app separates pure prediction from persistence and HTTP. Pure tests
+cover exact clean-window boundaries, floors/caps, all supported decay modes,
+manual overrides, overlap anchors, stable equal-time ordering, invalid inputs and
+datetime overflow. Model tests cover database constraints, historical references
+and cross-row evidence consistency. Services/API tests cover permissions,
+validation, rollback, immutable rule history, previews, stale writes, retries,
+archival, read projections and audit attribution.
 
-1. As a signed-in user, I submit a message, see the queued job, and eventually see the
-   uppercase result produced by a real Celery worker.
-2. As a returning user, I reload the page or sign out and back in and still see
-   the persisted result owned by my account.
-3. As a signed-in user, I cannot submit an empty or whitespace-only message, and I get
-   useful feedback for invalid input.
-4. As another signed-in account, I cannot see or retrieve another user's jobs.
-5. As the service owner, I can verify that unsafe requests without CSRF are
-   rejected, and the typed client's valid requests succeed through Pages.
-6. As the service owner, I can observe Beat publish a heartbeat that a real
-   worker processes and persists.
-7. As a signed-out visitor, I see the login screen by default and cannot access
-   job data by calling the API directly.
-8. As a user, I get a generic error for invalid credentials, can submit login
-   with the keyboard, and retain authentication after reloading the app.
-9. As a user, I can sign out, lose access to protected content, and sign back in
-   with the SDK refreshing CSRF after each authentication transition.
-10. As a user whose browser session expires, I return to the login screen and
-    cannot see stale protected content, then can sign in on the first attempt.
-11. As a user with two tabs sharing cookies, I see both tabs reconcile a sign-out
-    or account switch before showing the new account's protected content.
+PostgreSQL concurrency tests use separate thread-local connections and actual
+commits. They prove that two stale reports cannot both advance the same reviewed
+history, identical simultaneous retries agree on one event, and simultaneous
+owner demotions leave an owner. SQLite runs deliberately skip these tests because
+SQLite cannot prove PostgreSQL row-lock semantics. The normal backend command
+uses PostgreSQL.
 
-The E2E overlay uses a three-second heartbeat interval to keep the test short.
-Development and production use a longer default. Tests wait for observable
-state rather than assuming broker or scheduler startup is instantaneous.
-The script also creates ordinary test accounts with a fresh random password
-inside the disposable database. Credentials are passed through the container
-environment, not source defaults, and the database is deleted after the run.
-Development and production are never seeded with those test accounts.
+Frontend units test pure filtering, UTC calendar/date transformations, formatting,
+input conversion and the generated-client recovery boundary. Components test
+native controls and modal focus behavior. The authentication component suite
+isolates the session gate from domain-network reads; tracker component tests
+exercise actual tracker views. Full-stack tests then integrate those boundaries
+with real cookies, authorization, persistence and authoritative predictions.
 
-## Isolation and diagnostics
+## API generation
 
-The E2E runner assigns a separate Compose project name and removes host ports.
-It starts healthy dependencies before Playwright. Its exit trap collects logs,
-then deletes only that test project's containers and volumes, including on
-failure. The development project keeps its database when tests finish.
-Browser reports and traces are written under `frontend/`. GitHub uploads those
-artifacts even after a failed run.
+The schema is generated by `platform_tools`, not by the retained template job
+app. Generation validates a temporary sibling before atomic replacement. Failed
+or unchanged output does not replace the previous accepted contract. The backend
+watcher uses fresh Django subprocesses, so serializer/model edits cannot be hidden
+by stale imports. Its process remains available through invalid application edits.
 
-Backend tests also use a separate Compose project. pytest creates its own
-database. No test should point at a shared, hosted, or production database.
-Frontend component tests may mock the API package to exercise individual UI
-states; full-stack stories must use real services.
+The frontend watcher serializes and coalesces changes, generates declaration
+output atomically, and rebuilds the TypeScript package. Unit tests cover failed
+exports, unchanged-output timestamps, source filtering, rapid changes, bounded
+subprocesses, interrupted generation and later recovery. Startup/build generation
+and CI drift rejection remain independent checks.
 
-Run `./local-dev.sh test deployment` to render both Kubernetes environments and
-check their safety contracts inside Docker. The checks cover shared-image
-selection, separate namespaces and secret readers, migration Job recreation,
-the init gate on API/worker/Beat, and private tunnel routing. A copied-tree
-fixture verifies that the overlays render from `apps/<app>/<env>` under a
-GitOps-style cluster root without paths back to this checkout.
+```bash
+./local-dev.sh api-client
+git diff -- backend/openapi.json frontend/packages/api-client/src/schema.d.ts
+```
 
-Backend tests exercise migration locking and the Job gate, including failed,
-pending, missing, and stale successful Jobs. Rendered YAML checks establish the
-expected image and content-hashed configuration references. They do not prove
-that Azure federation, Key Vault reads, Flux reconciliation, NetworkPolicy, or
-real cluster rollouts work in an environment.
+An unchanged repeated export is expected after a clean generation. Do not edit
+schema JSON or generated declarations to make the check pass. Public PATCH
+schemas retain the required fields actually checked by their serializers,
+including reviewed revision tokens; fields declared optional remain optional.
 
-## Adding a feature
+## Full-stack isolation
 
-Write the API or task regression test first where practical, then implement the
-backend change. Regenerate the client with `./local-dev.sh api-client`. Add
-colocated frontend logic tests and browser component tests for UI behaviour.
-Add or update a full-stack story when the feature crosses the API, persistence,
-or background-worker boundary. Run the relevant suites before the full gate.
+Each full-stack run receives a separate Compose project and port-free service
+configuration. Its database, broker and ordinary test users are disposable.
+Passwords are randomly generated inside Docker and passed by environment, with
+no source defaults or logs containing those credentials. Test cases create unique
+fleets so parallel browsers cannot pollute one another's counts and filters.
 
-Passing container tests does not prove a hosted Cloudflare deployment, an actual
-cluster rollout, an edge access policy, or a production database migration.
-Those checks belong to the documented GitOps promotion procedure.
+Owners, editors, viewers and nonmembers use real sessions. Tests cover both UI
+visibility and direct API attempts; a hidden button alone is not authorization.
+An operator who belongs to two fleets must still be unable to combine an account
+from one with a rule from the other. Django staff/superuser status does not create
+implicit fleet membership.
 
-## Template verification
+The E2E overlay uses production runtime commands and baked application code.
+Development schema watchers, source mounts and reloaders must remain absent.
+Cleanup targets only that test project's resources. Development volumes and
+unrelated running applications are preserved. Component tests may replace API
+adapters to isolate a state; full-stack tests must not mock tracker/auth endpoints.
 
-The deployment check validates `SecretProviderClass` resources against the
-upstream CSI driver's v1 schema, pinned in
-`backend/tests/deployment/secretproviderclasses-crd.yaml` to
-[secrets-store-csi-driver v1.5.4](https://github.com/kubernetes-sigs/secrets-store-csi-driver/blob/08a11d824a310318216c6054c159281acc55c554/config/crd/bases/secrets-store.csi.x-k8s.io_secretproviderclasses.yaml).
-The schema is an offline test fixture, not an instruction to change the cluster's
-installed driver. No custom resources are skipped by the deployment check.
+## Acceptance traceability
 
-The login-enabled template was verified locally on 2026-11-09 using Docker:
+The discovery baseline contains 65 outcomes and 363 atomic candidate requirements.
+It also contains unresolved decisions and demo-only paths. The user subsequently
+selected separate fleets with membership permissions, distinct start/observation
+timestamps, retained historical policies and non-destructive archival.
 
-- 45 backend tests passed with 95% Python coverage.
-- 37 frontend unit tests and 25 Chromium component tests passed.
-- All 39 full-stack stories passed across Chromium, Firefox, and WebKit,
-  including login/logout, CSRF rotation, first-login recovery after cookie loss,
-  same-origin cross-tab account changes, account isolation, real Celery results,
-  and Beat delivery.
-- ESLint, Ruff, TypeScript, Django checks, migration drift, the Vite build,
-  and Wrangler's Pages Functions compilation passed.
-- Regenerating OpenAPI and TypeScript declarations produced identical files.
-- Compose configuration, ShellCheck, Actionlint, and strict Kubernetes schema
-  validation passed. That original Kubernetes check covered eight rendered
-  resources in the earlier generic examples; use the deployment command above
-  for the current staging and production overlays.
-- `./local-dev.sh up`, user creation and cleanup, and a CSRF-protected write
-  through Vite -> Wrangler -> Django passed. The login-enabled startup applied
-  the account-ownership migration and retained earlier unowned demo rows.
-  No sample user credentials were retained in the development database.
-- The locked frontend dependency audit reported no vulnerabilities.
+The [data model](data-model.md) records implemented choices. Acceptance cases
+must refer to stable US/RQ identifiers and concrete assertions. Original behavior
+that was replaced must be labelled as an approved alternative or an implementation
+assumption, not counted as an exact pass. An original candidate without an
+independent assertion must remain a coverage gap. A test title listing many IDs
+cannot establish all their acceptance conditions by itself.
 
-At that 2026-11-09 verification, GHCR publication and the GitHub-hosted workflow
-were configured but had not been executed from this checkout. No Cloudflare or
-Kubernetes deployment was made.
-The transactional outbox gap and lint dependency compatibility compromise are
-recorded in [architecture.md](architecture.md).
+Examples of intentional differences from the prototype are archive instead of
+cascade deletion, backend-verified login instead of an editable browser flag,
+UTC rather than ambiguous browser-local timestamps, preserved event assessments
+instead of unannounced history recalculation, real current time instead of a fixed
+demo date, and accessible overflow/navigation rather than unreachable data.
+No uncalibrated confidence label or hidden start-anchor setting is presented as
+an accepted product capability.
 
-Local reload behavior was also checked by editing and restoring real bind-mounted
-source while the Docker development stack stayed running. Chromium observed a
-React heading update without navigation or loss of an unsent form draft, and an
-API client TypeScript change executed without rebuilding its package. API
-responses and Celery results reflected Python edits, Beat picked up a changed
-schedule, and Wrangler recompiled an imported Function helper. All temporary
-source edits were restored byte-for-byte. This check ran on Linux Docker;
-polling is configured for Docker Desktop and WSL, but those hosts were not tested.
+The executable acceptance catalog and generated report must be checked against
+actual test results. Reports must distinguish a validated mapping from a passing
+execution, and distinguish outcome-level evidence from atomic requirement-level
+coverage. Keep failures, skipped checks and decisions visible.
 
-CI also inspects the merged E2E configuration. It rejects source mounts,
-development image targets, and Python reload commands in the story stack so
-live development edits cannot alter the code under E2E testing.
+`frontend/acceptance.json` assigns every one of the 363 original candidates a
+disposition, with exact source statements, acceptance examples and named test
+references. The validator rejects catalog drift, missing files and invented
+test names. The report keeps user-selected alternatives and implementation
+assumptions separate from exact original contracts. A conditional start-anchor
+path is not treated as a capability merely because the prototype contains it.
+
+The confirmed screen matrix is 320/390/768/1024/1440 CSS pixels at 100/200% text
+in each full-stack browser. Keyboard and reduced-motion checks supplement that
+matrix. Table and calendar scrolling is allowed inside named regions; the outer
+page must fit, and controls and recorded content must remain reachable.
+
+## Reports
+
+- Backend coverage: `backend/coverage.xml`, with statement and branch output in
+  the backend command log.
+- Backend JUnit: `backend/test-results/backend.xml`.
+- Frontend unit coverage: `frontend/coverage/unit/`.
+- Component coverage: `frontend/coverage/browser/`.
+- Frontend runner JSON: `frontend/test-results/unit.json` and `browser.json`.
+- Full-stack HTML: `frontend/playwright-report/`.
+- Full-stack JUnit and JSON: `frontend/test-results/e2e.xml` and `e2e.json`.
+- Failure screenshots, videos, traces and Compose logs: `frontend/test-results/`.
+- Browser-only and combined acceptance: `frontend/test-results/acceptance.*`
+  and `acceptance-combined.*`. Playwright trace cleanup uses its own
+  `e2e-artifacts/` subtree so unit/component evidence survives.
+- Rendered Kubernetes evidence: `test-artifacts/kubernetes/`.
+
+CI runs each category independently and uploads its artifacts even on failure.
+The acceptance job downloads those executed reports, verifies their combined
+evidence, and gates image publication. Browser tooling uses the mapped checkout
+owner under rootless Docker. Only disposable artifact directories are made
+writable across the browser image's different user; runtime services keep their
+unprivileged identities.
+Missing deployment-render fixtures can cause deployment-only tests to skip in the
+ordinary backend run; the deployment command creates those fixtures and runs the
+relevant checks explicitly. Report such skips rather than claiming they passed.
+
+## Limits
+
+These tests do not establish official current Valve rules, production load or
+availability targets, a hosted Cloudflare deployment, actual Azure federation or
+Key Vault access, or a real Kubernetes rollout. They do not replace stakeholder
+acceptance of the implementation assumptions. Accessibility interaction tests are
+not a claim of complete standards conformance or a manual assistive-technology
+review. Application code must still render user text literally and retain server
+permission checks independently of browser tests.
+
+## Latest local validation
+
+Validated on 2026-11-13 using the Docker toolchain:
+
+| Gate | Result |
+| --- | --- |
+| Backend with PostgreSQL | 223 passed, 10 deployment-fixture checks skipped; 96% aggregate statement/branch coverage |
+| Frontend units | 82 passed |
+| Watcher and acceptance tooling | 25 passed |
+| Chromium components through Playwright | 88 passed |
+| Full-stack Chromium, Firefox and WebKit | 153 passed, zero failures, skips or flaky results |
+| Deployment contracts | 30 passed, including the checks requiring rendered fixtures |
+| Combined acceptance | All 65 selected outcome contracts and 345 exact atomic assertion mappings passed |
+
+The remaining 18 original atomic candidates have explicit model or interface
+alternatives in the ledger. Their replaced behavior is not claimed as passing.
+Generated contracts were re-exported and rebuilt without byte drift. Django
+checks, migration drift, lint, TypeScript, production build, Pages compilation,
+workflow syntax, shell lint and both Compose configurations passed. A separate
+browser-image probe also passed as its ordinary non-root user. The live Django
+and Node 24 watcher pipeline regenerated and rebuilt after an isolated serializer
+edit, retained valid output through a syntax error, and recovered after correction
+without restarting either watcher.
+
+Reports are generated local/CI artifacts and are not committed. The reproducible
+combined report is [acceptance-combined.md](../frontend/test-results/acceptance-combined.md).
+Hosted CI execution and actual deployment were not performed by these local checks.

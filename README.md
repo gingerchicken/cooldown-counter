@@ -1,79 +1,82 @@
-# Django + React template
+# Cooldown Counter
 
-Cooldown Counter product discovery is recorded in the
-[user stories](2-user-stories/README.md) and
-[candidate requirements](3-requirements/requirements.md), with the
-[supplied design and evidence limits](docs/design/README.md). The application
-below is still the imported template; these records do not claim the tracker
-has been implemented.
-
-Django, React, TypeScript, Vite, PostgreSQL, Redis, Celery, Beat, and Gunicorn.
-Cloudflare Pages serves the static frontend; a Pages Function forwards `/api`
-to Django. Development and every test runner run in Docker containers.
+Track CS2 cooldown evidence in permission-scoped fleets. Django owns login,
+authorization, rule evaluation and durable history. React consumes an automatically
+generated TypeScript API contract through the existing same-origin Pages proxy.
+Rule defaults are editable model inputs, not verified current Valve policy.
 
 ## Start development
 
-Install Docker with Compose 2.24.4 or newer. No host Python or Node is required.
+Install Docker with Compose 2.24.4 or newer. No host Python, Node or browser
+installation is required.
 
 ```bash
 ./local-dev.sh up
-./local-dev.sh user
+./local-dev.sh operator --username alice
 ```
 
-Open <http://localhost:5173> for Vite hot reload, or <http://localhost:8788>
-for the production frontend build served by local Wrangler. Both use the real
-Pages Function for API requests. The user command creates a Django superuser
-interactively and keeps its password out of shell history. The default screen is
-login: enter that Django username and password to open the application. There
-are no preconfigured accounts or default login passwords. Existing active
-Django users can sign in without superuser privileges.
+The operator command prompts for a password without echoing it or putting it in
+shell history. It creates an ordinary Django account, not an administrator. There
+are no default login credentials or fabricated Steam-account histories. Use
+`./local-dev.sh user` only when a Django superuser is actually needed.
 
-If either port is occupied, use `LOCAL_DEV_PORT=5174 LOCAL_WEB_PORT=8789
-./local-dev.sh up`. Use the same environment values for later commands, or copy
-`.env.example` to `.env` and set them there. Existing local services are left alone.
+Open <http://localhost:5173>, sign in and create a fleet. Each fleet starts with
+five editable offence ladders and no tracked accounts. Add a real tracked account
+using its exact 17-digit SteamID, then record an observation. Provision colleagues
+with the same operator command before granting fleet membership.
 
-The included example accepts a message and queues an uppercase conversion.
-Each signed-in account can see only its own jobs, including after signing out
-and back in. The worker writes the result
-to PostgreSQL. Beat schedules a heartbeat, which the E2E tests verify through
-the real broker and worker. The example demonstrates infrastructure; replace
-it with your application's domain and tenant rules before exposing customer
-data. Login, logout, session restoration, and API access checks are included;
-self-service registration and password reset are not included.
+Owners manage membership. Editors manage accounts, rules and cooldown evidence.
+Viewers can read their permitted fleets. An operator can belong to several fleets;
+being authenticated or being Django staff grants no implicit access to another
+fleet. At least one owner must remain.
 
-## Daily commands
+The production-build local Pages endpoint is <http://localhost:8788>. Port 5173
+provides live frontend reload. Both use the real Pages Function and Django API.
+Set `LOCAL_DEV_PORT`, `LOCAL_WEB_PORT` and `COMPOSE_PROJECT_NAME` when another
+local application uses those ports. Normal shutdown retains development data.
+
+## API generation and live updates
+
+`up` exports the Django OpenAPI schema, generates TypeScript declarations, builds
+the API package and applies migrations before starting the stack. Development
+watchers then regenerate after backend Python edits and rebuild the client after
+schema or SDK-source changes. Invalid edits leave the last valid generated
+contract intact; a later correction triggers another attempt.
 
 ```bash
-./local-dev.sh logs                  # Follow the stack
-./local-dev.sh logs worker beat      # Follow background processes
-./local-dev.sh django check          # Any Django management command
-./local-dev.sh django makemigrations # Create migrations inside Docker
-./local-dev.sh migrate               # Apply migrations
-./local-dev.sh shell                 # Django shell
-./local-dev.sh api-client            # Refresh schema, TypeScript, and package
-./local-dev.sh down                  # Stop; retain database and broker volumes
-./local-dev.sh reset --yes           # Delete this development project's data
+./local-dev.sh api-client
 ```
 
-`up` builds the tooling images, exports Django's OpenAPI contract, generates
-and builds the frontend's API package, applies migrations, then starts the
-stack. Keep <http://localhost:5173> open while editing: React and API client
-TypeScript updates use Vite hot reload. Gunicorn, the Celery worker, and Beat
-restart automatically when application Python changes. Local Wrangler also
-reloads Pages Function and API proxy edits.
+Use this explicit command after API changes when development watchers are not
+running. Frontend development/build commands also generate and build the package.
+CI rejects drift in the checked-in schema and TypeScript declarations. Generated
+files must not be edited by hand.
 
-File watchers use polling by default for Docker Desktop and WSL compatibility.
-Set `DEV_WATCH_POLLING=false` before starting the stack to use native file events
-instead. Polling uses more CPU, so Python dependency folders, collected static
-files, test files, and frontend tool output are excluded from watching.
+The TypeScript interface comes from Django serializers. The shared client owns
+session cookies, CSRF bootstrap and rotation. The browser does not contain a
+second escalation engine or store passwords/session credentials in local storage.
 
-The built frontend on port 8788 remains a production-build preview; use port 5173
-for frontend hot reload. Dependency or container changes need another
-`./local-dev.sh up`. Database changes still need migration generation and
-`./local-dev.sh migrate`. API contract changes need `./local-dev.sh api-client`
-to refresh generated types; normal API client source edits reload automatically.
+## Recording and history
 
-## Tests
+All date/time inputs are labelled UTC. Cooldown start, observation time and
+server recording time are separate facts. Remaining duration uses positive whole
+minutes; mixed day/hour/minute components are additive. Future timestamps,
+invalid values and remaining duration above the chosen total need correction.
+An override selects an existing step and requires an explanation.
+
+A new offence advances a ladder once. Use an additional observation on an
+existing cooldown when reporting it again; that does not create another offence.
+Preview uses history at the entered start time and returns revision tokens.
+Concurrent history or policy changes require a refreshed review before saving.
+Stable request IDs prevent an ambiguous retry from creating duplicate evidence.
+
+Rule edits publish a new immutable version. Existing cooldowns retain their saved
+assessment and policy version, including after backdated evidence is added.
+Archiving a type retains its history. Overlapping restrictions delay clean time
+until the latest outstanding expiry. The default policy drops one level per
+completed seven-day clean window, with explicit full-reset and no-decay options.
+
+## Tests and acceptance
 
 ```bash
 ./local-dev.sh test backend
@@ -82,40 +85,56 @@ to refresh generated types; normal API client source edits reload automatically.
 ./local-dev.sh test e2e
 ./local-dev.sh test deployment
 ./local-dev.sh test all
+./local-dev.sh acceptance
 ```
 
-Backend checks include Ruff, pytest, Django system checks, and migration drift.
-Frontend checks include ESLint, TypeScript, Vitest unit tests, the static build,
-and the Pages Functions bundle. Component tests run in real browsers.
-Deployment checks render staging and production, check the migration gate,
-and verify the Kubernetes tree can be copied into the GitOps layout.
-Playwright user stories run the complete stack in a separate Compose project,
-with its own database and broker volumes and no published host ports. Cleanup
-preserves the development database. Failure logs and browser reports are saved
-under `frontend/test-results/` and `frontend/playwright-report/`.
+Backend checks run Ruff, pytest, Django checks and migration drift against an
+isolated PostgreSQL project. They include actual concurrent-write tests. Frontend
+checks run ESLint, TypeScript, unit/tooling tests, the static build and Pages
+Function compilation. Component tests run in real Chromium through Playwright.
+Full-stack Playwright tests use Chromium, Firefox and WebKit against actual
+Pages, Gunicorn, PostgreSQL, Redis, Celery and Beat, with separate test volumes.
+The agreed browser baseline starts at 320 CSS pixels with 200% text enlargement.
+The combined gate verifies the requirement ledger against actual results from
+all test layers. `acceptance` can reassemble that evidence without rerunning
+tests. Missing reports or failing named assertions do not count as passes.
 
-Tests are described in [docs/testing.md](docs/testing.md). The GitHub workflow
-runs each area and checks generated client drift before publishing an image.
+Unit and component coverage are written under `frontend/coverage/unit` and
+`frontend/coverage/browser`. Browser reports and failure artifacts are saved under
+`frontend/playwright-report` and `frontend/test-results`. Full details and the
+limits of acceptance evidence are in [docs/testing.md](docs/testing.md).
 
-## Structure and deployment
+## Daily operations
 
+```bash
+./local-dev.sh logs
+./local-dev.sh logs backend api-schema-watch api-client-watch
+./local-dev.sh django check
+./local-dev.sh django makemigrations
+./local-dev.sh migrate
+./local-dev.sh shell
+./local-dev.sh down
+```
+
+`./local-dev.sh reset --yes` deletes this development project's data. Do not use
+it for a normal restart. The full-stack test runner cleans only its disposable
+project, preserving development volumes and unrelated applications.
+
+## Design and architecture
+
+- [ER diagram and data invariants](docs/data-model.md)
+- [Standalone ER visual](docs/er-diagram.html)
 - [Architecture and boundaries](docs/architecture.md)
-- [Tests and user stories](docs/testing.md)
-- [Cloudflare Pages, GHCR, and GitOps deployment](docs/deployment.md)
-- [Copyable staging and production overlays](deploy/k8s/README.md)
-- [Agent structure guide and skills](.agents/README.md)
+- [Testing and acceptance strategy](docs/testing.md)
+- [User-story discovery index](2-user-stories/README.md)
+- [Candidate requirements](3-requirements/requirements.md)
+- [Original design and evidence limits](docs/design/README.md)
+- [Deployment runbook](docs/deployment.md)
+- [Portable Kubernetes overlays](deploy/k8s/README.md)
 
-Python lives in `backend/`. All frontend source, dependencies, test tools,
-and the generated `@template/api-client` package live in `frontend/`.
-Frontend unit tests sit beside their source as `*.test.*`; real-browser
-component tests use `*.browser.test.*`. ESLint rejects multiple components
-in one source file, including components that are not exported.
-
-GitHub CI builds and publishes one backend image to GHCR after the checks pass.
-Gunicorn, Celery workers, Beat, and the migration Job use that image with
-different commands. `deploy/k8s/` contains a shared base and self-contained
-staging and production overlays for `HBH-Infra/GitOps/apps/<app>/`. Replace the
-documented environment inputs, then promote a verified image digest through
-GitOps. Flux reconciles that reviewed configuration; this repository does not
-apply manifests or update GitOps automatically. Cloudflare publication remains
-a separate manual Wrangler command documented in the deployment guide.
+Python belongs in `backend/`, frontend source and tooling in `frontend/`.
+The template's background-job health and scheduler checks remain for
+infrastructure compatibility; the product workspace uses the tracker domain.
+Hosting publication, real cluster rollouts, operator backup policy and official
+game-rule validation are separate operational responsibilities. Test results do
+not claim those activities have occurred.

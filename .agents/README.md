@@ -14,6 +14,11 @@ Node, PostgreSQL, Redis, or browser binaries on the host.
   `*.test.*`; component browser tests are colocated `*.browser.test.*`.
 - `backend/accounts/` owns authentication and CSRF endpoints independently of
   the demonstration `backend/jobs/` app. Removing that demo must not remove login.
+- `backend/tracker/` owns fleet membership, tracked Steam accounts, immutable
+  cooldown evidence and policies. Keep pure prediction, write services, read
+  projections, serializers and HTTP permissions in their separate modules.
+- `backend/platform_tools/` owns operator provisioning and validated schema
+  export/watch commands independently of the demonstration job domain.
 - `frontend/packages/api-client/` is the TypeScript workspace package. Django
   exports its contract; OpenAPI TypeScript generates the package schema.
   Its transport owns cookies and CSRF. React must not duplicate CSRF handling.
