@@ -36,7 +36,8 @@ x-frontend-development: &frontend-development
   volumes:
     - ./frontend:/app/frontend
     - frontend_node_modules:/app/frontend/node_modules
-    - ./backend/openapi.json:/app/backend/openapi.json:ro
+    # A directory mount follows atomic schema replacement; a single-file bind pins the old inode.
+    - ./backend:/app/backend:ro
 
 services:
   db:

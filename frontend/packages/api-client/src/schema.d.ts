@@ -72,6 +72,233 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fleets/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return scoped identities with the caller's effective role. */
+        get: operations["fleets_list"];
+        put?: never;
+        /** @description Create an owner membership and rule defaults without seeding fake accounts. */
+        post: operations["fleets_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/accounts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read per-account availability and server-derived per-type predictions. */
+        get: operations["fleet_accounts_list"];
+        put?: never;
+        /** @description Create an account only after editor permission and exact string validation. */
+        post: operations["fleet_accounts_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/accounts/{account_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the same scoped UUID selected by the operator, never a tag substring. */
+        get: operations["fleet_accounts_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Archive or rename without removing associated event/observation facts. */
+        patch: operations["fleet_accounts_update"];
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/audit/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Keep the audit feed bounded to the latest hundred fleet mutations. */
+        get: operations["fleet_audit_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/calendar/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read exact account/type filters and distinct current fleet totals. */
+        get: operations["fleet_calendar_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/events/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Return 200 for an accepted identical retry and 201 for newly committed evidence. */
+        post: operations["fleet_events_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/events/{event_id}/observations/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Retain observed facts while preserving the parent event's original assessment. */
+        post: operations["fleet_observations_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/members/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Read the provisioned principals who share this workspace. */
+        get: operations["fleet_members_list"];
+        put?: never;
+        /** @description Grant an existing active operator an explicit role. */
+        post: operations["fleet_members_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/members/{member_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Revoke fleet access without deleting the principal or their historical evidence. */
+        delete: operations["fleet_members_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Apply a role change after validating the last-owner invariant. */
+        patch: operations["fleet_members_update"];
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/preview/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Use entered event time rather than the browser's or demo's current date. */
+        post: operations["fleet_preview_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/types/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Retain archived names so history is never rendered as an unknown reference. */
+        get: operations["fleet_types_list"];
+        put?: never;
+        /** @description Publish the initial nonempty policy and its stable offence identity atomically. */
+        post: operations["fleet_types_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/types/{type_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Reject a stale editor rather than overwrite another accepted policy change. */
+        patch: operations["fleet_types_update"];
+        trace?: never;
+    };
+    "/api/fleets/{fleet_id}/types/{type_id}/archive/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Archive the selected version without touching any associated evidence. */
+        post: operations["fleet_types_archive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health/": {
         parameters: {
             query?: never;
@@ -162,6 +389,79 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description A fleet row with exact identity, availability and all independent predictions. */
+        Account: {
+            /** Format: uuid */
+            id: string;
+            steam_id: string;
+            tag: string;
+            /** Format: date-time */
+            archived_at: string | null;
+            history_revision: number;
+            event_count: number;
+            recorded_type_ids: string[];
+            active_type_ids: string[];
+            status: components["schemas"]["AccountStatusEnum"];
+            predictions: components["schemas"]["Prediction"][];
+            /** Format: date-time */
+            active_until: string | null;
+            /** Format: date-time */
+            first_observed: string | null;
+        };
+        /** @description Detail adds preserved history without changing the base account response contract. */
+        AccountDetail: {
+            /** Format: uuid */
+            id: string;
+            steam_id: string;
+            tag: string;
+            /** Format: date-time */
+            archived_at: string | null;
+            history_revision: number;
+            event_count: number;
+            recorded_type_ids: string[];
+            active_type_ids: string[];
+            status: components["schemas"]["AccountStatusEnum"];
+            predictions: components["schemas"]["Prediction"][];
+            /** Format: date-time */
+            active_until: string | null;
+            /** Format: date-time */
+            first_observed: string | null;
+            events: components["schemas"]["Event"][];
+        };
+        /** @description Preserve the exact SteamID digit sequence and a separate display tag. */
+        AccountInputRequest: {
+            steam_id: string;
+            tag: string;
+        };
+        /**
+         * @description * `active` - active
+         *     * `clear` - clear
+         *     * `clean` - clean
+         * @enum {string}
+         */
+        AccountStatusEnum: "active" | "clear" | "clean";
+        /** @description Rename or archive an account while protecting its stable identifier and history. */
+        AccountUpdateRequest: {
+            tag?: string;
+            archived?: boolean;
+        };
+        /** @description Archive only the definition version whose impact the operator reviewed. */
+        ArchiveInputRequest: {
+            /** Format: uuid */
+            expected_policy_id: string;
+        };
+        /** @description An attributed mutation record without passwords, sessions or arbitrary request dumps. */
+        Audit: {
+            /** Format: uuid */
+            id: string;
+            action: string;
+            /** Format: uuid */
+            subject_id: string;
+            actor: string;
+            details: unknown;
+            /** Format: date-time */
+            created_at: string;
+        };
         /** @description A successful login always returns a real account without secret account fields. */
         AuthenticatedSession: {
             readonly user: components["schemas"]["User"];
@@ -170,9 +470,102 @@ export interface components {
         AuthenticationError: {
             detail: string;
         };
+        /** @description Unique event/forecast facts plus clearly fleet-wide totals at one reference instant. */
+        Calendar: {
+            events: components["schemas"]["Event"][];
+            forecasts: components["schemas"]["Forecast"][];
+            account_count: number;
+            active_count: number;
+            recorded_count: number;
+            /** Format: date-time */
+            as_of: string;
+        };
         /** @description A masked CSRF token is returned in JSON because its cookie is HttpOnly. */
         Csrf: {
             csrfToken: string;
+        };
+        /**
+         * @description * `step_down` - step_down
+         *     * `full_reset` - full_reset
+         *     * `none` - none
+         * @enum {string}
+         */
+        DecayModeEnum: "step_down" | "full_reset" | "none";
+        /** @description An immutable offence assessment and every observation attached to that event. */
+        Event: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            account_id: string;
+            account_tag: string;
+            /** Format: uuid */
+            type_id: string;
+            type_name: string;
+            /** Format: uuid */
+            policy_id: string;
+            policy_number: number;
+            /** Format: date-time */
+            started_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            assigned_step: number;
+            total_minutes: number;
+            is_override: boolean;
+            override_reason: string;
+            transition: string;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+            observations: components["schemas"]["Observation"][];
+        };
+        /** @description Accept reviewed rule/history tokens and initial evidence, never a client total. */
+        EventInputRequest: {
+            /** Format: uuid */
+            account_id: string;
+            /** Format: uuid */
+            type_id: string;
+            /** Format: date-time */
+            started_at: string;
+            forced_step?: number;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            observation_id: string;
+            /** Format: uuid */
+            policy_id: string;
+            history_revision: number;
+            /** Format: date-time */
+            observed_at: string;
+            remaining_minutes: number;
+            /** @default  */
+            override_reason: string;
+        };
+        /** @description A tenant summary includes the current caller's effective role. */
+        Fleet: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            role: components["schemas"]["RoleEnum"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description A fleet is named by its creator; its owner membership is always server-assigned. */
+        FleetInputRequest: {
+            name: string;
+        };
+        /** @description One future reduction distinguishes stored state from the next offence outcome. */
+        Forecast: {
+            /** Format: uuid */
+            account_id: string;
+            account_tag: string;
+            /** Format: uuid */
+            type_id: string;
+            type_name: string;
+            /** Format: date-time */
+            at: string;
+            stored_step: number;
+            next_step: number;
+            total_minutes: number;
         };
         /** @description Minimal probe output deliberately excludes secrets and infrastructure details. */
         Health: {
@@ -215,9 +608,138 @@ export interface components {
             username: string;
             password: string;
         };
+        /** @description A scoped provisioned principal without credentials or global user privileges. */
+        Membership: {
+            id: number;
+            user_id: number;
+            username: string;
+            role: components["schemas"]["RoleEnum"];
+        };
+        /** @description Owners grant a provisioned operator one explicit tenant role. */
+        MembershipInputRequest: {
+            username: string;
+            role: components["schemas"]["RoleEnum"];
+        };
+        /** @description A membership role can change without changing its user or fleet identity. */
+        MembershipUpdateRequest: {
+            role: components["schemas"]["RoleEnum"];
+        };
+        /** @description Observed evidence keeps its timestamp and reporting principal separate from prediction. */
+        Observation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            observed_at: string;
+            remaining_minutes: number;
+            created_by: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description Append evidence to one known offence without creating another escalation event. */
+        ObservationInputRequest: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            observed_at: string;
+            remaining_minutes: number;
+        };
+        /** @description Stable catalogue metadata plus its current rule revision and historical usage. */
+        OffenceType: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            code: string;
+            note: string;
+            /** Format: date-time */
+            archived_at: string | null;
+            policy: components["schemas"]["Policy"];
+            event_count: number;
+        };
+        /** @description An immutable rule version and ordered whole-minute ladder. */
+        Policy: {
+            /** Format: uuid */
+            id: string;
+            number: number;
+            decay_mode: components["schemas"]["DecayModeEnum"];
+            clean_window_days: number;
+            steps: number[];
+        };
+        /** @description A server-derived next-offence estimate, distinct from a saved observation. */
+        Prediction: {
+            /** Format: uuid */
+            type_id: string;
+            type_name: string;
+            step: number;
+            total_steps: number;
+            total_minutes: number;
+            base_step: number;
+            sample_count: number;
+            recorded_step: number;
+            /** Format: date-time */
+            next_decay_at: string | null;
+            transition: string;
+        };
+        /** @description An assessment and its reviewed policy/history concurrency tokens. */
+        Preview: {
+            /** Format: uuid */
+            policy_id: string;
+            history_revision: number;
+            step: number;
+            total_minutes: number;
+            /** Format: date-time */
+            expires_at: string;
+            base_step: number;
+            transition: string;
+            sample_count: number;
+        };
+        /** @description Calculate an assessment at the proposed issue time without modifying any evidence. */
+        PreviewInputRequest: {
+            /** Format: uuid */
+            account_id: string;
+            /** Format: uuid */
+            type_id: string;
+            /** Format: date-time */
+            started_at: string;
+            forced_step?: number;
+        };
+        /**
+         * @description * `owner` - owner
+         *     * `editor` - editor
+         *     * `viewer` - viewer
+         * @enum {string}
+         */
+        RoleEnum: "owner" | "editor" | "viewer";
         /** @description Represent a signed-out browser with null rather than an authentication error. */
         Session: {
             readonly user: components["schemas"]["User"] | null;
+        };
+        /** @description Describe metadata and a nonempty ladder for one new stable offence identity. */
+        TypeInputRequest: {
+            name: string;
+            /** @default  */
+            code: string;
+            /** @default  */
+            note: string;
+            steps: number[];
+            /** @default 7 */
+            clean_window_days: number;
+            /** @default step_down */
+            decay_mode: components["schemas"]["DecayModeEnum"];
+        };
+        /** @description An editor supplies the reviewed policy token before publishing or renaming. */
+        TypeUpdateRequest: {
+            name: string;
+            /** @default  */
+            code: string;
+            /** @default  */
+            note: string;
+            steps: number[];
+            /** @default 7 */
+            clean_window_days: number;
+            /** @default step_down */
+            decay_mode: components["schemas"]["DecayModeEnum"];
+            /** Format: uuid */
+            expected_policy_id: string;
         };
         /** @description Expose only the stable identity needed by the authenticated frontend. */
         User: {
@@ -319,6 +841,500 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Csrf"];
+                };
+            };
+        };
+    };
+    fleets_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Fleet"][];
+                };
+            };
+        };
+    };
+    fleets_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FleetInputRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["FleetInputRequest"];
+                "multipart/form-data": components["schemas"]["FleetInputRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Fleet"];
+                };
+            };
+        };
+    };
+    fleet_accounts_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Account"][];
+                };
+            };
+        };
+    };
+    fleet_accounts_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountInputRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AccountInputRequest"];
+                "multipart/form-data": components["schemas"]["AccountInputRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDetail"];
+                };
+            };
+        };
+    };
+    fleet_accounts_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDetail"];
+                };
+            };
+        };
+    };
+    fleet_accounts_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AccountUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AccountUpdateRequest"];
+                "multipart/form-data": components["schemas"]["AccountUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDetail"];
+                };
+            };
+        };
+    };
+    fleet_audit_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Audit"][];
+                };
+            };
+        };
+    };
+    fleet_calendar_retrieve: {
+        parameters: {
+            query?: {
+                account_id?: string;
+                end?: string;
+                start?: string;
+                /**
+                 * @description * `all` - all
+                 *     * `active` - active
+                 *     * `clear` - clear
+                 */
+                status?: "all" | "active" | "clear";
+                type_id?: string;
+            };
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Calendar"];
+                };
+            };
+        };
+    };
+    fleet_events_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventInputRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EventInputRequest"];
+                "multipart/form-data": components["schemas"]["EventInputRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Event"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Event"];
+                };
+            };
+        };
+    };
+    fleet_observations_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservationInputRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ObservationInputRequest"];
+                "multipart/form-data": components["schemas"]["ObservationInputRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Observation"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Observation"];
+                };
+            };
+        };
+    };
+    fleet_members_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Membership"][];
+                };
+            };
+        };
+    };
+    fleet_members_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipInputRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["MembershipInputRequest"];
+                "multipart/form-data": components["schemas"]["MembershipInputRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Membership"];
+                };
+            };
+        };
+    };
+    fleet_members_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+                member_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    fleet_members_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+                member_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MembershipUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["MembershipUpdateRequest"];
+                "multipart/form-data": components["schemas"]["MembershipUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Membership"];
+                };
+            };
+        };
+    };
+    fleet_preview_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewInputRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PreviewInputRequest"];
+                "multipart/form-data": components["schemas"]["PreviewInputRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preview"];
+                };
+            };
+        };
+    };
+    fleet_types_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OffenceType"][];
+                };
+            };
+        };
+    };
+    fleet_types_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TypeInputRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TypeInputRequest"];
+                "multipart/form-data": components["schemas"]["TypeInputRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OffenceType"];
+                };
+            };
+        };
+    };
+    fleet_types_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+                type_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TypeUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TypeUpdateRequest"];
+                "multipart/form-data": components["schemas"]["TypeUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OffenceType"];
+                };
+            };
+        };
+    };
+    fleet_types_archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+                type_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveInputRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ArchiveInputRequest"];
+                "multipart/form-data": components["schemas"]["ArchiveInputRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OffenceType"];
                 };
             };
         };

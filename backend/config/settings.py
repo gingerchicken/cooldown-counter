@@ -63,6 +63,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "django_celery_beat",
+    # Tracker owns tenant-scoped cooldown evidence; platform tools own schema generation.
+    "tracker",
+    "platform_tools",
     "jobs",
 ]
 
@@ -161,11 +164,22 @@ REST_FRAMEWORK = {
 
 # The schema is the sole source for the generated TypeScript client contract.
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Django template API",
-    "DESCRIPTION": "Session authentication, account-owned background jobs, and scheduler health.",
+    "TITLE": "Cooldown Counter API",
+    "DESCRIPTION": (
+        "Django sessions, permission-scoped fleets, cooldown evidence and policy versions."
+    ),
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    # These endpoints validate explicit request serializers, including required revision tokens.
+    # DRF's automatic PATCH optionalization would otherwise misstate their runtime contracts.
+    "COMPONENT_SPLIT_PATCH": False,
+    # Distinct account, calendar and job states need stable generated names rather than hashes.
+    "ENUM_NAME_OVERRIDES": {
+        "AccountStatusEnum": ["active", "clear", "clean"],
+        "CalendarStatusEnum": ["all", "active", "clear"],
+        "JobStatusEnum": ["pending", "running", "succeeded", "failed"],
+    },
 }
 
 # CELERY_BROKER_URL selects Redis for dispatch; application database rows own durable results.

@@ -1,9 +1,9 @@
 {
     "openapi": "3.0.3",
     "info": {
-        "title": "Django template API",
+        "title": "Cooldown Counter API",
         "version": "1.0.0",
-        "description": "Session authentication, account-owned background jobs, and scheduler health."
+        "description": "Django sessions, permission-scoped fleets, cooldown evidence and policy versions."
     },
     "paths": {
         "/api/auth/login/": {
@@ -130,6 +130,1030 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/Csrf"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/": {
+            "get": {
+                "operationId": "fleets_list",
+                "description": "Return scoped identities with the caller's effective role.",
+                "tags": [
+                    "fleets"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Fleet"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "fleets_create",
+                "description": "Create an owner membership and rule defaults without seeding fake accounts.",
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/FleetInputRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/FleetInputRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/FleetInputRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Fleet"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/accounts/": {
+            "get": {
+                "operationId": "fleet_accounts_list",
+                "description": "Read per-account availability and server-derived per-type predictions.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Account"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "fleet_accounts_create",
+                "description": "Create an account only after editor permission and exact string validation.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AccountInputRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AccountInputRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AccountInputRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccountDetail"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/accounts/{account_id}/": {
+            "get": {
+                "operationId": "fleet_accounts_retrieve",
+                "description": "Read the same scoped UUID selected by the operator, never a tag substring.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "account_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccountDetail"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "patch": {
+                "operationId": "fleet_accounts_update",
+                "description": "Archive or rename without removing associated event/observation facts.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "account_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AccountUpdateRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AccountUpdateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AccountUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AccountDetail"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/audit/": {
+            "get": {
+                "operationId": "fleet_audit_list",
+                "description": "Keep the audit feed bounded to the latest hundred fleet mutations.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Audit"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/calendar/": {
+            "get": {
+                "operationId": "fleet_calendar_retrieve",
+                "description": "Read exact account/type filters and distinct current fleet totals.",
+                "parameters": [
+                    {
+                        "in": "query",
+                        "name": "account_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "end",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "query",
+                        "name": "start",
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "in": "query",
+                        "name": "status",
+                        "schema": {
+                            "enum": [
+                                "all",
+                                "active",
+                                "clear"
+                            ],
+                            "type": "string",
+                            "default": "all",
+                            "minLength": 1
+                        },
+                        "description": "* `all` - all\n* `active` - active\n* `clear` - clear"
+                    },
+                    {
+                        "in": "query",
+                        "name": "type_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Calendar"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/events/": {
+            "post": {
+                "operationId": "fleet_events_create",
+                "description": "Return 200 for an accepted identical retry and 201 for newly committed evidence.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EventInputRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EventInputRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/EventInputRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Event"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Event"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/events/{event_id}/observations/": {
+            "post": {
+                "operationId": "fleet_observations_create",
+                "description": "Retain observed facts while preserving the parent event's original assessment.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "event_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ObservationInputRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ObservationInputRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ObservationInputRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Observation"
+                                }
+                            }
+                        },
+                        "description": ""
+                    },
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Observation"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/members/": {
+            "get": {
+                "operationId": "fleet_members_list",
+                "description": "Read the provisioned principals who share this workspace.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Membership"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "fleet_members_create",
+                "description": "Grant an existing active operator an explicit role.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MembershipInputRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MembershipInputRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MembershipInputRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Membership"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/members/{member_id}/": {
+            "patch": {
+                "operationId": "fleet_members_update",
+                "description": "Apply a role change after validating the last-owner invariant.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "member_id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MembershipUpdateRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MembershipUpdateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MembershipUpdateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Membership"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "delete": {
+                "operationId": "fleet_members_destroy",
+                "description": "Revoke fleet access without deleting the principal or their historical evidence.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "member_id",
+                        "schema": {
+                            "type": "integer"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No response body"
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/preview/": {
+            "post": {
+                "operationId": "fleet_preview_create",
+                "description": "Use entered event time rather than the browser's or demo's current date.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PreviewInputRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PreviewInputRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PreviewInputRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Preview"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/types/": {
+            "get": {
+                "operationId": "fleet_types_list",
+                "description": "Retain archived names so history is never rendered as an unknown reference.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/OffenceType"
+                                    }
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            },
+            "post": {
+                "operationId": "fleet_types_create",
+                "description": "Publish the initial nonempty policy and its stable offence identity atomically.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TypeInputRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TypeInputRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TypeInputRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OffenceType"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/types/{type_id}/": {
+            "patch": {
+                "operationId": "fleet_types_update",
+                "description": "Reject a stale editor rather than overwrite another accepted policy change.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "type_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TypeUpdateRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TypeUpdateRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TypeUpdateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OffenceType"
+                                }
+                            }
+                        },
+                        "description": ""
+                    }
+                }
+            }
+        },
+        "/api/fleets/{fleet_id}/types/{type_id}/archive/": {
+            "post": {
+                "operationId": "fleet_types_archive",
+                "description": "Archive the selected version without touching any associated evidence.",
+                "parameters": [
+                    {
+                        "in": "path",
+                        "name": "fleet_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    },
+                    {
+                        "in": "path",
+                        "name": "type_id",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "required": true
+                    }
+                ],
+                "tags": [
+                    "fleets"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ArchiveInputRequest"
+                            }
+                        },
+                        "application/x-www-form-urlencoded": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ArchiveInputRequest"
+                            }
+                        },
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ArchiveInputRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "cookieAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/OffenceType"
                                 }
                             }
                         },
@@ -316,6 +1340,251 @@
     },
     "components": {
         "schemas": {
+            "Account": {
+                "type": "object",
+                "description": "A fleet row with exact identity, availability and all independent predictions.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "steam_id": {
+                        "type": "string"
+                    },
+                    "tag": {
+                        "type": "string"
+                    },
+                    "archived_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "history_revision": {
+                        "type": "integer"
+                    },
+                    "event_count": {
+                        "type": "integer"
+                    },
+                    "recorded_type_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "active_type_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/AccountStatusEnum"
+                    },
+                    "predictions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Prediction"
+                        }
+                    },
+                    "active_until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "first_observed": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    }
+                },
+                "required": [
+                    "active_type_ids",
+                    "active_until",
+                    "archived_at",
+                    "event_count",
+                    "first_observed",
+                    "history_revision",
+                    "id",
+                    "predictions",
+                    "recorded_type_ids",
+                    "status",
+                    "steam_id",
+                    "tag"
+                ]
+            },
+            "AccountDetail": {
+                "type": "object",
+                "description": "Detail adds preserved history without changing the base account response contract.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "steam_id": {
+                        "type": "string"
+                    },
+                    "tag": {
+                        "type": "string"
+                    },
+                    "archived_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "history_revision": {
+                        "type": "integer"
+                    },
+                    "event_count": {
+                        "type": "integer"
+                    },
+                    "recorded_type_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "active_type_ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/AccountStatusEnum"
+                    },
+                    "predictions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Prediction"
+                        }
+                    },
+                    "active_until": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "first_observed": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "events": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Event"
+                        }
+                    }
+                },
+                "required": [
+                    "active_type_ids",
+                    "active_until",
+                    "archived_at",
+                    "event_count",
+                    "events",
+                    "first_observed",
+                    "history_revision",
+                    "id",
+                    "predictions",
+                    "recorded_type_ids",
+                    "status",
+                    "steam_id",
+                    "tag"
+                ]
+            },
+            "AccountInputRequest": {
+                "type": "object",
+                "description": "Preserve the exact SteamID digit sequence and a separate display tag.",
+                "properties": {
+                    "steam_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 17,
+                        "pattern": "^[0-9]{17}$"
+                    },
+                    "tag": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                    }
+                },
+                "required": [
+                    "steam_id",
+                    "tag"
+                ]
+            },
+            "AccountStatusEnum": {
+                "enum": [
+                    "active",
+                    "clear",
+                    "clean"
+                ],
+                "type": "string",
+                "description": "* `active` - active\n* `clear` - clear\n* `clean` - clean"
+            },
+            "AccountUpdateRequest": {
+                "type": "object",
+                "description": "Rename or archive an account while protecting its stable identifier and history.",
+                "properties": {
+                    "tag": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                    },
+                    "archived": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "ArchiveInputRequest": {
+                "type": "object",
+                "description": "Archive only the definition version whose impact the operator reviewed.",
+                "properties": {
+                    "expected_policy_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": [
+                    "expected_policy_id"
+                ]
+            },
+            "Audit": {
+                "type": "object",
+                "description": "An attributed mutation record without passwords, sessions or arbitrary request dumps.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "action": {
+                        "type": "string"
+                    },
+                    "subject_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "actor": {
+                        "type": "string"
+                    },
+                    "details": {},
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "action",
+                    "actor",
+                    "created_at",
+                    "details",
+                    "id",
+                    "subject_id"
+                ]
+            },
             "AuthenticatedSession": {
                 "type": "object",
                 "description": "A successful login always returns a real account without secret account fields.",
@@ -345,6 +1614,45 @@
                     "detail"
                 ]
             },
+            "Calendar": {
+                "type": "object",
+                "description": "Unique event/forecast facts plus clearly fleet-wide totals at one reference instant.",
+                "properties": {
+                    "events": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Event"
+                        }
+                    },
+                    "forecasts": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Forecast"
+                        }
+                    },
+                    "account_count": {
+                        "type": "integer"
+                    },
+                    "active_count": {
+                        "type": "integer"
+                    },
+                    "recorded_count": {
+                        "type": "integer"
+                    },
+                    "as_of": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "account_count",
+                    "active_count",
+                    "as_of",
+                    "events",
+                    "forecasts",
+                    "recorded_count"
+                ]
+            },
             "Csrf": {
                 "type": "object",
                 "description": "A masked CSRF token is returned in JSON because its cookie is HttpOnly.",
@@ -355,6 +1663,248 @@
                 },
                 "required": [
                     "csrfToken"
+                ]
+            },
+            "DecayModeEnum": {
+                "enum": [
+                    "step_down",
+                    "full_reset",
+                    "none"
+                ],
+                "type": "string",
+                "description": "* `step_down` - step_down\n* `full_reset` - full_reset\n* `none` - none"
+            },
+            "Event": {
+                "type": "object",
+                "description": "An immutable offence assessment and every observation attached to that event.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "account_tag": {
+                        "type": "string"
+                    },
+                    "type_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "type_name": {
+                        "type": "string"
+                    },
+                    "policy_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "policy_number": {
+                        "type": "integer"
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "assigned_step": {
+                        "type": "integer"
+                    },
+                    "total_minutes": {
+                        "type": "integer"
+                    },
+                    "is_override": {
+                        "type": "boolean"
+                    },
+                    "override_reason": {
+                        "type": "string"
+                    },
+                    "transition": {
+                        "type": "string"
+                    },
+                    "created_by": {
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "observations": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Observation"
+                        }
+                    }
+                },
+                "required": [
+                    "account_id",
+                    "account_tag",
+                    "assigned_step",
+                    "created_at",
+                    "created_by",
+                    "expires_at",
+                    "id",
+                    "is_override",
+                    "observations",
+                    "override_reason",
+                    "policy_id",
+                    "policy_number",
+                    "started_at",
+                    "total_minutes",
+                    "transition",
+                    "type_id",
+                    "type_name"
+                ]
+            },
+            "EventInputRequest": {
+                "type": "object",
+                "description": "Accept reviewed rule/history tokens and initial evidence, never a client total.",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "type_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "forced_step": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": 1
+                    },
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "observation_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "policy_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "history_revision": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "observed_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "remaining_minutes": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": 1
+                    },
+                    "override_reason": {
+                        "type": "string",
+                        "default": "",
+                        "maxLength": 2000
+                    }
+                },
+                "required": [
+                    "account_id",
+                    "history_revision",
+                    "id",
+                    "observation_id",
+                    "observed_at",
+                    "policy_id",
+                    "remaining_minutes",
+                    "started_at",
+                    "type_id"
+                ]
+            },
+            "Fleet": {
+                "type": "object",
+                "description": "A tenant summary includes the current caller's effective role.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/RoleEnum"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "id",
+                    "name",
+                    "role"
+                ]
+            },
+            "FleetInputRequest": {
+                "type": "object",
+                "description": "A fleet is named by its creator; its owner membership is always server-assigned.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                    }
+                },
+                "required": [
+                    "name"
+                ]
+            },
+            "Forecast": {
+                "type": "object",
+                "description": "One future reduction distinguishes stored state from the next offence outcome.",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "account_tag": {
+                        "type": "string"
+                    },
+                    "type_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "type_name": {
+                        "type": "string"
+                    },
+                    "at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "stored_step": {
+                        "type": "integer"
+                    },
+                    "next_step": {
+                        "type": "integer"
+                    },
+                    "total_minutes": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "account_id",
+                    "account_tag",
+                    "at",
+                    "next_step",
+                    "stored_step",
+                    "total_minutes",
+                    "type_id",
+                    "type_name"
                 ]
             },
             "Health": {
@@ -478,6 +2028,316 @@
                     "username"
                 ]
             },
+            "Membership": {
+                "type": "object",
+                "description": "A scoped provisioned principal without credentials or global user privileges.",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "user_id": {
+                        "type": "integer"
+                    },
+                    "username": {
+                        "type": "string"
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/RoleEnum"
+                    }
+                },
+                "required": [
+                    "id",
+                    "role",
+                    "user_id",
+                    "username"
+                ]
+            },
+            "MembershipInputRequest": {
+                "type": "object",
+                "description": "Owners grant a provisioned operator one explicit tenant role.",
+                "properties": {
+                    "username": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 150
+                    },
+                    "role": {
+                        "$ref": "#/components/schemas/RoleEnum"
+                    }
+                },
+                "required": [
+                    "role",
+                    "username"
+                ]
+            },
+            "MembershipUpdateRequest": {
+                "type": "object",
+                "description": "A membership role can change without changing its user or fleet identity.",
+                "properties": {
+                    "role": {
+                        "$ref": "#/components/schemas/RoleEnum"
+                    }
+                },
+                "required": [
+                    "role"
+                ]
+            },
+            "Observation": {
+                "type": "object",
+                "description": "Observed evidence keeps its timestamp and reporting principal separate from prediction.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "observed_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "remaining_minutes": {
+                        "type": "integer"
+                    },
+                    "created_by": {
+                        "type": "string"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                },
+                "required": [
+                    "created_at",
+                    "created_by",
+                    "id",
+                    "observed_at",
+                    "remaining_minutes"
+                ]
+            },
+            "ObservationInputRequest": {
+                "type": "object",
+                "description": "Append evidence to one known offence without creating another escalation event.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "observed_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "remaining_minutes": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": 1
+                    }
+                },
+                "required": [
+                    "id",
+                    "observed_at",
+                    "remaining_minutes"
+                ]
+            },
+            "OffenceType": {
+                "type": "object",
+                "description": "Stable catalogue metadata plus its current rule revision and historical usage.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "code": {
+                        "type": "string"
+                    },
+                    "note": {
+                        "type": "string"
+                    },
+                    "archived_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "policy": {
+                        "$ref": "#/components/schemas/Policy"
+                    },
+                    "event_count": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "archived_at",
+                    "code",
+                    "event_count",
+                    "id",
+                    "name",
+                    "note",
+                    "policy"
+                ]
+            },
+            "Policy": {
+                "type": "object",
+                "description": "An immutable rule version and ordered whole-minute ladder.",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "number": {
+                        "type": "integer"
+                    },
+                    "decay_mode": {
+                        "$ref": "#/components/schemas/DecayModeEnum"
+                    },
+                    "clean_window_days": {
+                        "type": "integer"
+                    },
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "required": [
+                    "clean_window_days",
+                    "decay_mode",
+                    "id",
+                    "number",
+                    "steps"
+                ]
+            },
+            "Prediction": {
+                "type": "object",
+                "description": "A server-derived next-offence estimate, distinct from a saved observation.",
+                "properties": {
+                    "type_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "type_name": {
+                        "type": "string"
+                    },
+                    "step": {
+                        "type": "integer"
+                    },
+                    "total_steps": {
+                        "type": "integer"
+                    },
+                    "total_minutes": {
+                        "type": "integer"
+                    },
+                    "base_step": {
+                        "type": "integer"
+                    },
+                    "sample_count": {
+                        "type": "integer"
+                    },
+                    "recorded_step": {
+                        "type": "integer"
+                    },
+                    "next_decay_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true
+                    },
+                    "transition": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "base_step",
+                    "next_decay_at",
+                    "recorded_step",
+                    "sample_count",
+                    "step",
+                    "total_minutes",
+                    "total_steps",
+                    "transition",
+                    "type_id",
+                    "type_name"
+                ]
+            },
+            "Preview": {
+                "type": "object",
+                "description": "An assessment and its reviewed policy/history concurrency tokens.",
+                "properties": {
+                    "policy_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "history_revision": {
+                        "type": "integer"
+                    },
+                    "step": {
+                        "type": "integer"
+                    },
+                    "total_minutes": {
+                        "type": "integer"
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "base_step": {
+                        "type": "integer"
+                    },
+                    "transition": {
+                        "type": "string"
+                    },
+                    "sample_count": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "base_step",
+                    "expires_at",
+                    "history_revision",
+                    "policy_id",
+                    "sample_count",
+                    "step",
+                    "total_minutes",
+                    "transition"
+                ]
+            },
+            "PreviewInputRequest": {
+                "type": "object",
+                "description": "Calculate an assessment at the proposed issue time without modifying any evidence.",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "type_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    },
+                    "started_at": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "forced_step": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": 1
+                    }
+                },
+                "required": [
+                    "account_id",
+                    "started_at",
+                    "type_id"
+                ]
+            },
+            "RoleEnum": {
+                "enum": [
+                    "owner",
+                    "editor",
+                    "viewer"
+                ],
+                "type": "string",
+                "description": "* `owner` - owner\n* `editor` - editor\n* `viewer` - viewer"
+            },
             "Session": {
                 "type": "object",
                 "description": "Represent a signed-out browser with null rather than an authentication error.",
@@ -494,6 +2354,107 @@
                 },
                 "required": [
                     "user"
+                ]
+            },
+            "TypeInputRequest": {
+                "type": "object",
+                "description": "Describe metadata and a nonempty ladder for one new stable offence identity.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                    },
+                    "code": {
+                        "type": "string",
+                        "default": "",
+                        "maxLength": 4
+                    },
+                    "note": {
+                        "type": "string",
+                        "default": "",
+                        "maxLength": 2000
+                    },
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "maximum": 2147483647,
+                            "minimum": 1
+                        },
+                        "minItems": 1
+                    },
+                    "clean_window_days": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "default": 7
+                    },
+                    "decay_mode": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/DecayModeEnum"
+                            }
+                        ],
+                        "default": "step_down"
+                    }
+                },
+                "required": [
+                    "name",
+                    "steps"
+                ]
+            },
+            "TypeUpdateRequest": {
+                "type": "object",
+                "description": "An editor supplies the reviewed policy token before publishing or renaming.",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                    },
+                    "code": {
+                        "type": "string",
+                        "default": "",
+                        "maxLength": 4
+                    },
+                    "note": {
+                        "type": "string",
+                        "default": "",
+                        "maxLength": 2000
+                    },
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "maximum": 2147483647,
+                            "minimum": 1
+                        },
+                        "minItems": 1
+                    },
+                    "clean_window_days": {
+                        "type": "integer",
+                        "maximum": 2147483647,
+                        "minimum": 1,
+                        "default": 7
+                    },
+                    "decay_mode": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/DecayModeEnum"
+                            }
+                        ],
+                        "default": "step_down"
+                    },
+                    "expected_policy_id": {
+                        "type": "string",
+                        "format": "uuid"
+                    }
+                },
+                "required": [
+                    "expected_policy_id",
+                    "name",
+                    "steps"
                 ]
             },
             "User": {

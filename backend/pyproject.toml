@@ -39,5 +39,5 @@ line-length = 100
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.coverage.run]
-source = ["accounts", "jobs", "config"]
+source = ["accounts", "tracker", "platform_tools", "jobs", "config"]
 omit = ["*/migrations/*", "config/test_settings.py", "config/wsgi.py", "config/asgi.py"]
