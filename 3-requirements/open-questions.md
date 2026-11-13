@@ -1,5 +1,11 @@
 # Open decisions
 
+Historical discovery snapshot: the statuses below describe the original intake.
+The user subsequently selected separate fleets with membership permissions and
+data-preserving timestamp/history rules. Current implementation choices are
+recorded in [the ER model](../docs/data-model.md). Remaining assumptions must not
+be mistaken for explicit approval of every original candidate.
+
 Every item is **Open / TBR**, recorded 2026-11-12, with **owner unassigned**.
 The resolution action includes nominating the person authorized to decide.
 **Review date: TBR - set at the first product review; required before baseline

@@ -1,5 +1,11 @@
 # Cooldown Counter requirements
 
+This document preserves the discovery baseline. Implementation decisions and
+the user-selected multi-fleet/history model are recorded in
+[the ER model](../docs/data-model.md). Executable acceptance evidence is described
+in [the testing guide](../docs/testing.md); candidate wording is not itself a
+claim that a production acceptance test passed.
+
 This is the canonical candidate list for **Cooldown Counter design baseline
 v0.1**, extracted on 2026-11-12. No requirement is Reviewed or Approved.
 
