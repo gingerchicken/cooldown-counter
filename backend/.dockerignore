@@ -4,6 +4,7 @@ __pycache__
 .ruff_cache
 .coverage
 coverage.xml
+test-results
 db.sqlite3
 staticfiles
 .env

@@ -65,6 +65,28 @@ services:
       timeout: 5s
       retries: 30
 
+  api-schema-watch:
+    <<: *backend
+    profiles: [development]
+    # Standalone startup survives invalid Django imports while the next source edit fixes them.
+    command: [python, -m, platform_tools.schema_watch]
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      # Only this development tooling service needs to publish generated schema source.
+      - ./backend:/app/backend
+
+  api-client-watch:
+    <<: *frontend-development
+    profiles: [development]
+    # Serialized generation rebuilds the SDK after the backend publishes a changed valid schema.
+    command: [npm, run, api:watch]
+    environment:
+      CI: "true"
+      HOME: /tmp
+    depends_on:
+      api-schema-watch:
+        condition: service_started
+
   migrate:
     <<: *backend
     command: [python, manage.py, migrate, --noinput]
@@ -210,15 +232,20 @@ services:
       dockerfile: frontend/Dockerfile
       target: e2e
     init: true
+    # Rootless tooling uses its mapped checkout owner; deployed runtime services keep their own users.
+    user: "${BROWSER_TEST_USER:-pwuser}"
     # Shared memory avoids Chromium renderer failures in larger story suites.
     shm_size: 1gb
     command: [npm, run, test:e2e]
     environment:
       BASE_URL: http://web:8788
       CI: "true"
+      HOME: /tmp
     volumes:
       - ./frontend/playwright-report:/app/frontend/playwright-report
       - ./frontend/test-results:/app/frontend/test-results
+      # Component coverage must survive the disposable browser container for review and CI upload.
+      - ./frontend/coverage:/app/frontend/coverage
     depends_on:
       web:
         condition: service_healthy

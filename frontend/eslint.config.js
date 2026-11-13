@@ -7,7 +7,8 @@ import tseslint from "typescript-eslint";
 
 // Apply one-component-per-file to all source, including unexported components.
 export default tseslint.config(
-  { ignores: ["dist/**", "packages/*/dist/**", "node_modules/**", ".wrangler/**", "playwright-report/**", "test-results/**", "**/schema.d.ts"] },
+  // Coverage assets are generated report code, not maintained application or tooling source.
+  { ignores: ["dist/**", "packages/*/dist/**", "node_modules/**", ".wrangler/**", "playwright-report/**", "test-results/**", "coverage/**", "**/schema.d.ts"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

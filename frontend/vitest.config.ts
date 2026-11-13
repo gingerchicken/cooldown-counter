@@ -8,8 +8,10 @@ export default defineConfig({
   test: {
     coverage: {
       provider: "v8",
-      include: ["src/**/*.ts", "packages/api-client/src/index.ts"],
-      exclude: ["**/*.test.*", "**/schema.d.ts"],
+      // Include components as well as pure helpers so browser coverage is not hidden.
+      include: ["src/**/*.{ts,tsx}", "packages/api-client/src/**/*.ts"],
+      // Test-only data builders and generated declarations are not shipped application behavior.
+      exclude: ["**/*.test.*", "**/testing.fixtures.ts", "**/schema.d.ts"],
     },
     projects: [
       {

@@ -26,6 +26,16 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+# Rootless Docker maps the host checkout owner to container root, not the same numeric UID.
+# Only writable tooling adopts that mapped identity; application runtime images stay unprivileged.
+case "$(docker info --format '{{json .SecurityOptions}}')" in
+  *name=rootless*)
+    # Browser reports share host mounts too; namespace root maps to their actual checkout owner.
+    LOCAL_UID=0; LOCAL_GID=0; BROWSER_TEST_USER=root
+    export LOCAL_UID LOCAL_GID BROWSER_TEST_USER
+    ;;
+esac
+
 ## Run the development Compose project from its fixed configuration file.
 compose() {
   # Absolute configuration paths keep caller working directories irrelevant.
@@ -77,7 +87,10 @@ test_backend() (
   compose build backend-test
   compose run --rm backend-test ruff check .
   compose run --rm --no-deps backend-test ruff format --check .
-  compose run --rm --no-deps backend-test pytest --cov --cov-report=term-missing --cov-report=xml
+  # Create report storage as the same mapped tool user that writes coverage and JUnit evidence.
+  compose run --rm --no-deps backend-test mkdir -p test-results
+  compose run --rm --no-deps backend-test pytest --cov --cov-branch --cov-report=term-missing --cov-report=xml \
+    --junitxml=test-results/backend.xml
   compose run --rm --no-deps backend-test python manage.py check
   compose run --rm --no-deps backend-test python manage.py makemigrations --check --dry-run
 )
@@ -96,6 +109,7 @@ test_frontend() (
   # Source mounts hide package output baked into the image, including on a fresh checkout.
   compose run --rm --no-deps frontend-test npm run api:generate
   compose run --rm --no-deps frontend-test npm run api:build
+  compose run --rm --no-deps frontend-test npm run test:tooling
   compose run --rm --no-deps frontend-test npm run lint
   compose run --rm --no-deps frontend-test npm run typecheck
   compose run --rm --no-deps frontend-test npm run test:unit
@@ -103,13 +117,25 @@ test_frontend() (
   compose run --rm --no-deps frontend-test npm run pages:build
 )
 
+## Make disposable browser reports writable across Docker user mappings and earlier test runs.
+prepare_browser_artifacts() {
+  # Only ignored test output is shared; application source and persistent databases are excluded.
+  mkdir -p "$PROJECT_ROOT/frontend/test-results" "$PROJECT_ROOT/frontend/playwright-report" \
+    "$PROJECT_ROOT/frontend/coverage/browser"
+  # Match host ownership and let the image's distinct browser UID refresh these disposable reports.
+  # Positional UID/GID values expand inside the container shell, not in this outer runner.
+  # shellcheck disable=SC2016
+  compose run --rm --no-deps --user root e2e sh -c '
+    chown -R "$1:$2" /app/frontend/test-results /app/frontend/playwright-report /app/frontend/coverage
+    chmod -R a+rwX /app/frontend/test-results /app/frontend/playwright-report /app/frontend/coverage
+  ' sh "$LOCAL_UID" "$LOCAL_GID"
+}
+
 ## Exercise components in real browsers using the dedicated Playwright image.
 test_browser() {
   # OS libraries and browser binaries come from the image rather than the host.
-  mkdir -p "$PROJECT_ROOT/frontend/test-results" "$PROJECT_ROOT/frontend/playwright-report"
-  # The image's browser user can have a different UID from the checkout owner.
-  chmod a+w "$PROJECT_ROOT/frontend/test-results" "$PROJECT_ROOT/frontend/playwright-report"
   compose build e2e
+  prepare_browser_artifacts
   compose run --rm --no-deps e2e npm run test:browser
 }
 
@@ -163,11 +189,8 @@ test_e2e() (
   trap cleanup_tests EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  # Create report mounts as the host user before Docker can create root-owned directories.
-  mkdir -p "$PROJECT_ROOT/frontend/test-results" "$PROJECT_ROOT/frontend/playwright-report"
-  # Allow the image's unprivileged browser user to write reports on Linux CI hosts.
-  chmod a+w "$PROJECT_ROOT/frontend/test-results" "$PROJECT_ROOT/frontend/playwright-report"
   docker compose -f compose.yaml -f compose.e2e.yaml build backend web e2e
+  prepare_browser_artifacts
   docker compose -f compose.yaml -f compose.e2e.yaml up --detach --wait --wait-timeout 240 web worker beat
   # Generate credentials inside Docker and pass them by environment, never into logs or defaults.
   # E2E_PASSWORD exists only for this isolated stack and disappears when its database is removed.
@@ -188,7 +211,9 @@ for worker_index in range(2):
             password=os.environ["E2E_PASSWORD"],
         )
 '
-  docker compose -f compose.yaml -f compose.e2e.yaml run --rm --no-deps -e E2E_PASSWORD e2e
+  # Pass explicit Playwright options as argv, preserving quoting without shell evaluation.
+  docker compose -f compose.yaml -f compose.e2e.yaml run --rm --no-deps -e E2E_PASSWORD e2e \
+    npm run test:e2e -- "$@"
 )
 
 ## Describe the supported entry points without requiring host language runtimes.
@@ -201,6 +226,7 @@ Usage: ./local-dev.sh [command]
   down                     Stop development containers and retain their database
   logs [service...]        Follow development service logs
   user [Django options]    Interactively create a Django superuser
+  operator --username NAME Create an ordinary Django operator using hidden password prompts
   django [arguments...]    Run a Django management command in the backend container
   shell                    Open the Django shell in the backend container
   migrate                  Apply Django migrations in the backend container
@@ -209,7 +235,7 @@ Usage: ./local-dev.sh [command]
   test frontend            Frontend lint, types, unit tests, build, and Pages bundle
   test browser             Component tests in real browsers
   test deployment          Render and validate portable staging/production GitOps overlays
-  test e2e                 Full Docker stack and browser user stories, then clean up
+  test e2e [options...]    Full Docker stack; optional Playwright arguments select diagnostics
   test all                 Run every test category
   reset --yes              Delete ONLY this development project's containers and data
   help                     Show these commands
@@ -230,13 +256,21 @@ case "$development_command" in
   up)
     # The Python schema and frontend package are refreshed before application images build.
     generate_client
-    compose up --build --detach --wait --wait-timeout 240
+    # Development-only contract watchers are excluded from production-shaped E2E stacks.
+    compose --profile development up --build --detach --wait --wait-timeout 240
     printf 'Development app: http://%s\n' "$(compose port vite 5173)"
     printf 'Built Pages app: http://%s\n' "$(compose port web 8788)"
     ;;
-  down) compose down ;;
+  down)
+    # Include development-only contract watchers in the normal shutdown boundary.
+    compose --profile development down
+    ;;
   logs) compose logs --follow "$@" ;;
   user) compose exec backend python manage.py createsuperuser "$@" ;;
+  operator)
+    # Operator provisioning needs no global administrator role or password argument.
+    compose run --rm --no-deps backend-test python manage.py create_operator "$@"
+    ;;
   django)
     # Tooling has a writable source mount for commands such as makemigrations.
     compose run --rm --no-deps backend-test python manage.py "$@"
@@ -251,7 +285,7 @@ case "$development_command" in
       frontend) test_frontend ;;
       browser) test_browser ;;
       deployment) test_deployment ;;
-      e2e) test_e2e ;;
+      e2e) test_e2e "${@:2}" ;;
       all) test_backend; test_frontend; test_browser; test_deployment; test_e2e ;;
       *) usage >&2; exit 2 ;;
     esac
