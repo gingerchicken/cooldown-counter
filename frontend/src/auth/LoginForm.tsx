@@ -27,7 +27,9 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
     event.preventDefault();
     if (!username.trim() || !password) {
       // Empty fields never reach the server, and keyboard focus identifies the missing input.
-      setError("Enter your username and password.");
+      setError(!username.trim() && !password
+        ? "Enter a username and password."
+        : (!username.trim() ? "Enter a username." : "Enter a password."));
       if (!username.trim()) {
         // Username is the first field in the standard sign-in sequence.
         usernameInput.current?.focus();
@@ -76,6 +78,8 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
         onChange={(event) => {
           // Retain the account name during a failed attempt without storing it globally.
           setUsername(event.target.value);
+          // A changed input invalidates feedback about the previous credential draft.
+          setError(null);
         }}
         aria-describedby={error ? "login-error" : undefined}
         aria-invalid={Boolean(error)}
@@ -93,6 +97,8 @@ export function LoginForm({ onSubmit }: LoginFormProps) {
         onChange={(event) => {
           // Keep the secret only in this form until the next attempt settles.
           setPassword(event.target.value);
+          // Do not leave a missing-input or rejected-credential message attached to new input.
+          setError(null);
         }}
         aria-describedby={error ? "login-error" : undefined}
         aria-invalid={Boolean(error)}

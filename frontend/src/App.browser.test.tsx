@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
-import { ApiError } from "@template/api-client";
 import type { Session } from "@template/api-client";
 import { App } from "./App";
 
-// apiMocks controls account and job boundaries; full-stack stories exercise real cookies and CSRF.
+// apiMocks controls identity and protected-child boundaries; full-stack stories exercise real cookies and CSRF.
 const apiMocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   login: vi.fn(),
   logout: vi.fn(),
-  listJobs: vi.fn(),
-  createJob: vi.fn(),
+  workspaceMounted: vi.fn(),
+  expireWorkspace: false,
   resetCsrfToken: vi.fn(),
 }));
 vi.mock("@template/api-client", async (importOriginal) => {
@@ -19,35 +18,70 @@ vi.mock("@template/api-client", async (importOriginal) => {
   return { ...packageExports, createApiClient: () => apiMocks };
 });
 
+vi.mock("./tracker/TrackerWorkspace", async () => {
+  // The fixture mounts only after App accepts Django identity; domain behavior is tested separately.
+  const { useEffect } = await import("react");
+  return {
+    /** Keep authentication tests independent of fleet-network calls and domain UI details. */
+    TrackerWorkspace: function WorkspaceFixture({ user, onSessionExpired, onSignOut, isLoggingOut, logoutError }: {
+      user: { id: number; username: string };
+      onSessionExpired: () => void;
+      onSignOut: () => Promise<void>;
+      isLoggingOut?: boolean;
+      logoutError?: string | null;
+    }) {
+      // A protected read rejecting the cookie session is simulated only at this child boundary.
+      useEffect(() => {
+        // Record which authoritative operator identity was allowed to mount private state.
+        apiMocks.workspaceMounted(user.id);
+        if (apiMocks.expireWorkspace) {
+          // App must unmount every protected child when the server session becomes invalid.
+          onSessionExpired();
+        }
+      }, [onSessionExpired, user.id]);
+      return <section>
+        <h2>Fleet workspace</h2>
+        <p>{user.username}</p>
+        <h3>{user.username} private work</h3>
+        {logoutError && <p role="alert">{logoutError}</p>}
+        <button disabled={isLoggingOut} onClick={() => {
+          // The parent owns authoritative logout confirmation and its recovery path.
+          void onSignOut();
+        }}>Sign out</button>
+      </section>;
+    },
+  };
+});
+
 beforeEach(() => {
   // Start every screen with an accepted signed-out session rather than inherited account state.
+  apiMocks.expireWorkspace = false;
   apiMocks.getSession.mockReset().mockResolvedValue({ user: null });
   apiMocks.login.mockReset().mockResolvedValue({ id: 7, username: "alice" });
   apiMocks.logout.mockReset().mockResolvedValue(undefined);
-  apiMocks.listJobs.mockReset().mockResolvedValue([]);
-  apiMocks.createJob.mockReset();
+  apiMocks.workspaceMounted.mockReset();
   apiMocks.resetCsrfToken.mockReset();
 });
 
 describe("authenticated application screen in Chromium", () => {
-  // Session state gates every job read and protected component mount.
-  it("waits for the cookie session before showing credentials or protected jobs", async () => {
+  // Session state gates every protected read and protected component mount.
+  it("waits for the cookie session before showing credentials or protected workspace state", async () => {
     // A pending server read makes the initial uncertainty observable without timing guesses.
     apiMocks.getSession.mockReturnValue(new Promise(() => { /* Keep the initial check pending. */ }));
     // screen scopes this test's accessible queries to one application mount.
     const screen = await render(<App />);
     await expect.element(screen.getByRole("status")).toHaveTextContent("Checking your session...");
     await expect.element(screen.getByRole("textbox", { name: "Username" })).not.toBeInTheDocument();
-    expect(apiMocks.listJobs).not.toHaveBeenCalled();
+    expect(apiMocks.workspaceMounted).not.toHaveBeenCalled();
   });
 
-  it("shows sign in by default and never reads jobs for an anonymous session", async () => {
+  it("shows sign in by default and never mounts the workspace for an anonymous session", async () => {
     // screen waits for the public session check to settle as anonymous.
     const screen = await render(<App />);
     await expect.element(screen.getByRole("heading", { name: "Sign in", exact: true })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    await expect.element(screen.getByRole("textbox", { name: "Message" })).not.toBeInTheDocument();
-    expect(apiMocks.listJobs).not.toHaveBeenCalled();
+    await expect.element(screen.getByRole("heading", { name: "Fleet workspace", exact: true })).not.toBeInTheDocument();
+    expect(apiMocks.workspaceMounted).not.toHaveBeenCalled();
   });
 
   it("restores an existing signed-in account without asking for its password", async () => {
@@ -55,7 +89,7 @@ describe("authenticated application screen in Chromium", () => {
     apiMocks.getSession.mockResolvedValue({ user: { id: 7, username: "alice" } });
     // screen represents a new page mount with a pre-existing authenticated session.
     const screen = await render(<App />);
-    await expect.element(screen.getByRole("heading", { name: "Background jobs", exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "Fleet workspace", exact: true })).toBeVisible();
     await expect.element(screen.getByText("alice", { exact: true })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "Sign out" })).toBeVisible();
     expect(apiMocks.login).not.toHaveBeenCalled();
@@ -67,21 +101,21 @@ describe("authenticated application screen in Chromium", () => {
     await screen.getByRole("textbox", { name: "Username" }).fill("alice");
     await screen.getByLabelText("Password").fill("exact password");
     await screen.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect.element(screen.getByRole("heading", { name: "Background jobs", exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "Fleet workspace", exact: true })).toBeVisible();
     expect(apiMocks.login).toHaveBeenCalledWith({ username: "alice", password: "exact password" });
-    await expect.element(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "alice private work" })).toBeVisible();
   });
 
-  it("removes protected jobs after confirmed logout", async () => {
+  it("removes protected workspace state after confirmed logout", async () => {
     // Give the account private content that must disappear with its screen state.
     apiMocks.getSession.mockResolvedValue({ user: { id: 7, username: "alice" } });
-    apiMocks.listJobs.mockResolvedValue([{ id: 42, message: "private account work", result: "PRIVATE ACCOUNT WORK", status: "succeeded", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }]);
+    // The mocked workspace displays only the currently accepted operator identity.
     // screen owns the authenticated mount that logout must remove.
     const screen = await render(<App />);
-    await expect.element(screen.getByRole("heading", { name: "private account work" })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "alice private work" })).toBeVisible();
     await screen.getByRole("button", { name: "Sign out" }).click();
     await expect.element(screen.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    await expect.element(screen.getByText("PRIVATE ACCOUNT WORK", { exact: true })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "alice private work" })).not.toBeInTheDocument();
     expect(apiMocks.logout).toHaveBeenCalledOnce();
   });
 
@@ -93,7 +127,7 @@ describe("authenticated application screen in Chromium", () => {
     const screen = await render(<App />);
     await screen.getByRole("button", { name: "Sign out" }).click();
     await expect.element(screen.getByRole("alert")).toHaveTextContent("Sign out could not be confirmed. Please try again.");
-    await expect.element(screen.getByRole("heading", { name: "Background jobs", exact: true })).toBeVisible();
+    await expect.element(screen.getByRole("heading", { name: "Fleet workspace", exact: true })).toBeVisible();
     await expect.element(screen.getByRole("button", { name: "Sign out" })).toBeEnabled();
   });
 
@@ -111,17 +145,17 @@ describe("authenticated application screen in Chromium", () => {
   it("returns to sign in when a protected read rejects an expired session", async () => {
     // A successful session read can become stale before the first protected API request.
     apiMocks.getSession.mockResolvedValue({ user: { id: 7, username: "alice" } });
-    apiMocks.listJobs.mockRejectedValue(new ApiError(403));
+    apiMocks.expireWorkspace = true;
     // screen must remove its account boundary rather than showing an endless polling error.
     const screen = await render(<App />);
     await expect.element(screen.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
-    await expect.element(screen.getByRole("textbox", { name: "Message" })).not.toBeInTheDocument();
+    await expect.element(screen.getByRole("heading", { name: "Fleet workspace", exact: true })).not.toBeInTheDocument();
   });
 
   it("removes old account data while a sibling tab's cookie transition is rechecked", async () => {
     // Begin with account-owned content that must disappear before a replacement identity is known.
     apiMocks.getSession.mockResolvedValue({ user: { id: 7, username: "alice" } });
-    apiMocks.listJobs.mockResolvedValue([{ id: 42, message: "alice private work", result: "ALICE PRIVATE WORK", status: "succeeded", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }]);
+    // Private workspace state must disappear while another tab changes the cookie identity.
     // screen represents an already-open tab with Alice's displayed identity and draft.
     const screen = await render(<App />);
     await expect.element(screen.getByRole("heading", { name: "alice private work" })).toBeVisible();
@@ -138,9 +172,8 @@ describe("authenticated application screen in Chromium", () => {
       siblingChannel.postMessage("session-changed");
       await expect.element(screen.getByRole("status")).toHaveTextContent("Checking your session...");
       await expect.element(screen.getByRole("heading", { name: "alice private work" })).not.toBeInTheDocument();
-      await expect.element(screen.getByRole("textbox", { name: "Message" })).not.toBeInTheDocument();
+      await expect.element(screen.getByRole("heading", { name: "Fleet workspace", exact: true })).not.toBeInTheDocument();
       expect(apiMocks.resetCsrfToken).toHaveBeenCalledOnce();
-      apiMocks.listJobs.mockResolvedValue([]);
       acceptSessionCheck?.({ user: { id: 8, username: "bob" } });
       await expect.element(screen.getByText("bob", { exact: true })).toBeVisible();
       await expect.element(screen.getByText("alice", { exact: true })).not.toBeInTheDocument();

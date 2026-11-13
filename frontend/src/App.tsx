@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createApiClient } from "@template/api-client";
 import type { AuthenticatedUser, LoginRequest } from "@template/api-client";
 import { LoginForm } from "./auth/LoginForm";
-import { JobsScreen } from "./jobs/JobsScreen";
+import { notifySessionChange, openSessionChannel } from "./auth/sessionChannel";
+import { TrackerWorkspace } from "./tracker/TrackerWorkspace";
 
 // One client shares HttpOnly session cookies and CSRF rotation across every screen.
 const apiClient = createApiClient();
@@ -49,7 +50,7 @@ export function App() {
 
   useEffect(() => {
     // channel belongs to this mounted tab; messages contain no tokens, usernames, or passwords.
-    const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(AUTH_SESSION_CHANNEL);
+    const channel = openSessionChannel(AUTH_SESSION_CHANNEL);
     sessionChannel.current = channel;
 
     /** Treat a sibling tab's login/logout as an invalidated local identity, never as a supplied user. */
@@ -83,16 +84,26 @@ export function App() {
     async function checkSession() {
       try {
         // checkedSession contains a public identity or null, never the cookie credential itself.
-        const checkedSession = await apiClient.getSession({ signal: abortController.signal });
-        if (!abortController.signal.aborted && checkRevision === sessionRevision.current) {
+        const checkedSession = await apiClient.getSession({
+          signal: abortController.signal,
+        });
+        if (
+          !abortController.signal.aborted &&
+          checkRevision === sessionRevision.current
+        ) {
           // Only a completed authoritative read may unlock protected account content.
-          setSession(checkedSession.user === null
-            ? { status: "anonymous" }
-            : { status: "authenticated", user: checkedSession.user });
+          setSession(
+            checkedSession.user === null
+              ? { status: "anonymous" }
+              : { status: "authenticated", user: checkedSession.user },
+          );
         }
       } catch {
         // A connectivity error cannot safely be interpreted as an anonymous response.
-        if (!abortController.signal.aborted && checkRevision === sessionRevision.current) {
+        if (
+          !abortController.signal.aborted &&
+          checkRevision === sessionRevision.current
+        ) {
           setSession({ status: "error" });
         }
       }
@@ -111,7 +122,7 @@ export function App() {
 
   /** Remove all protected screen state when the server rejects an expired cookie session. */
   const handleSessionExpired = useCallback(() => {
-    // JobsScreen unmounts here, discarding its polling state and any previous account's rows.
+    // The tracker unmounts here, discarding every protected fleet snapshot and unfinished draft.
     sessionRevision.current += 1;
     sessionCheckAbort.current?.abort();
     apiClient.resetCsrfToken();
@@ -125,7 +136,7 @@ export function App() {
     const loginRevision = sessionRevision.current;
     // authenticatedUser is the server-confirmed account identity, not browser input.
     const authenticatedUser = await apiClient.login(credentials);
-    sessionChannel.current?.postMessage(SESSION_CHANGED_MESSAGE);
+    notifySessionChange(sessionChannel.current, SESSION_CHANGED_MESSAGE);
     if (loginRevision !== sessionRevision.current) {
       // The login changed cookies, but only a fresh read can resolve concurrent tab transitions.
       requestSessionCheck();
@@ -146,7 +157,7 @@ export function App() {
     try {
       // The package invalidates its cached token only when logout was accepted.
       await apiClient.logout();
-      sessionChannel.current?.postMessage(SESSION_CHANGED_MESSAGE);
+      notifySessionChange(sessionChannel.current, SESSION_CHANGED_MESSAGE);
       if (logoutRevision !== sessionRevision.current) {
         // A sibling tab may have already established another identity using the shared cookies.
         requestSessionCheck();
@@ -170,19 +181,39 @@ export function App() {
     }
   }
 
+  // Preserve the existing cookie-session gate while the tracker owns fleet-scoped application state.
+  if (session.status === "authenticated") {
+    return (
+      <TrackerWorkspace
+        key={session.user.id}
+        client={apiClient}
+        user={session.user}
+        onSessionExpired={handleSessionExpired}
+        onSignOut={signOut}
+        isLoggingOut={isLoggingOut}
+        logoutError={logoutError}
+      />
+    );
+  }
+
   return (
-    <main>
+    <main className="auth-shell">
       <header className="page-header">
-        <span className="eyebrow">Django + React starter</span>
-        <h1>{session.status === "authenticated" ? "Background jobs" : "Sign in"}</h1>
-        <p>{session.status === "authenticated"
-          ? "A small starting point for a full-stack application."
-          : "Sign in to your account to continue."}</p>
+        <span className="brand-mark" aria-hidden="true">
+          CC
+        </span>
+        <span className="eyebrow">PRIVATE FLEET TRACKING</span>
+        <h1>Cooldown Counter</h1>
+        <p>Cooldown records are restricted to fleet operators.</p>
       </header>
-      {session.status === "checking" && <p role="status">Checking your session...</p>}
+      {session.status === "checking" && (
+        <p role="status">Checking your session...</p>
+      )}
       {session.status === "error" && (
         <section className="panel" aria-label="Session unavailable">
-          <p role="alert" className="error">Your sign-in status could not be checked. Please try again.</p>
+          <p role="alert" className="error">
+            Your sign-in status could not be checked. Please try again.
+          </p>
           <button
             type="button"
             onClick={() => {
@@ -196,29 +227,14 @@ export function App() {
       )}
       {session.status === "anonymous" && (
         <section className="panel login-panel" aria-label="Account sign in">
+          <h2>Sign in</h2>
           <LoginForm onSubmit={signIn} />
         </section>
       )}
-      {session.status === "authenticated" && (
-        <>
-          <div className="session-toolbar">
-            <p>Signed in as <strong>{session.user.username}</strong></p>
-            <button
-              type="button"
-              disabled={isLoggingOut}
-              onClick={() => {
-                // Logout has its own failure handling and never navigates away from an active request.
-                void signOut();
-              }}
-            >
-              {isLoggingOut ? "Signing out..." : "Sign out"}
-            </button>
-          </div>
-          {logoutError && <p role="alert" className="error">{logoutError}</p>}
-          <JobsScreen key={session.user.id} client={apiClient} onSessionExpired={handleSessionExpired} />
-        </>
-      )}
-      <footer>React + TypeScript + Vite / Django / Celery / Cloudflare Pages</footer>
+      <footer>
+        Use your provisioned operator account. There are no default login
+        credentials.
+      </footer>
     </main>
   );
 }

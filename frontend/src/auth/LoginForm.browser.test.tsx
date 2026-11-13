@@ -27,10 +27,12 @@ describe("login form in Chromium", () => {
     // screen lets assertions use the same labels as assistive technology.
     const screen = await render(<LoginForm onSubmit={signIn} />);
     await screen.getByRole("button", { name: "Sign in", exact: true }).click();
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("Enter your username and password.");
+    await expect.element(screen.getByRole("alert")).toHaveTextContent("Enter a username and password.");
     await expect.element(screen.getByRole("textbox", { name: "Username" })).toHaveFocus();
     await screen.getByRole("textbox", { name: "Username" }).fill("alice");
+    await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
     await screen.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect.element(screen.getByRole("alert")).toHaveTextContent("Enter a password.");
     await expect.element(screen.getByLabelText("Password")).toHaveFocus();
     expect(signIn).not.toHaveBeenCalled();
   });
@@ -47,6 +49,22 @@ describe("login form in Chromium", () => {
     await expect.element(screen.getByRole("textbox", { name: "Username" })).toHaveValue("alice");
     await expect.element(screen.getByLabelText("Password")).toHaveValue("");
     await expect.element(screen.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+  });
+
+  it("identifies a missing username and clears that error when the draft changes", async () => {
+    // An exact secret may be entered first without making a blank identity a valid login attempt.
+    const signIn = vi.fn<(credentials: LoginRequest) => Promise<void>>().mockResolvedValue(undefined);
+    // Real browser controls prove error announcements and first-field focus remain coordinated.
+    const screen = await render(<LoginForm onSubmit={signIn} />);
+    await screen.getByLabelText("Password").fill("exact secret");
+    await screen.getByRole("button", { name: "Sign in", exact: true }).click();
+    await expect.element(screen.getByRole("alert")).toHaveTextContent("Enter a username.");
+    await expect.element(screen.getByRole("textbox", { name: "Username" })).toHaveFocus();
+    expect(signIn).not.toHaveBeenCalled();
+    await screen.getByRole("textbox", { name: "Username" }).fill("alice");
+    await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
+    await screen.getByRole("button", { name: "Sign in", exact: true }).click();
+    expect(signIn).toHaveBeenCalledWith({ username: "alice", password: "exact secret" });
   });
 
   it("shows an operational error without claiming the credentials were wrong", async () => {
