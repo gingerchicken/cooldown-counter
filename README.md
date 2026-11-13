@@ -1,140 +1,271 @@
 # Cooldown Counter
 
-Track CS2 cooldown evidence in permission-scoped fleets. Django owns login,
-authorization, rule evaluation and durable history. React consumes an automatically
-generated TypeScript API contract through the existing same-origin Pages proxy.
-Rule defaults are editable model inputs, not verified current Valve policy.
+**A shared workspace for tracking CS2 cooldowns and their history.**
 
-## Start development
+[![CI](https://github.com/gingerchicken/cooldown-counter/actions/workflows/ci.yaml/badge.svg)](https://github.com/gingerchicken/cooldown-counter/actions/workflows/ci.yaml)
 
-Install Docker with Compose 2.24.4 or newer. No host Python, Node or browser
-installation is required.
+Track Steam accounts, record cooldown observations and manage escalation rules
+across separate fleets. Django handles login, permissions and rule evaluation.
+React uses a generated TypeScript API client to keep the interface aligned with
+[the backend contract](backend/openapi.json).
+
+[Quick start](#quick-start) |
+[Features](#features) |
+[Development](#development) |
+[Tests](#tests-and-acceptance) |
+[Documentation](#documentation) |
+[Deployment](#deployment)
+
+## Quick start
+
+You need **Git** and **Docker with Compose 2.24.4 or newer**. Python, Node,
+PostgreSQL, Redis and browser test tools run in containers.
+
+### 1. Start the application
 
 ```bash
+# Create a local checkout for the application and its Docker configuration.
+git clone https://github.com/gingerchicken/cooldown-counter.git
+cd cooldown-counter
+```
+
+If another checkout uses the default ports or project name, set your
+[local configuration](#optional-local-configuration) before starting the stack.
+
+```bash
+# Build the images, generate the API client, apply migrations and start the stack.
 ./local-dev.sh up
+```
+
+The first start installs the locked dependencies and builds the images.
+
+### 2. Create your login
+
+In another terminal, from the same checkout:
+
+```bash
+# Provision an ordinary operator; enter the password at the hidden prompts.
 ./local-dev.sh operator --username alice
 ```
 
-The operator command prompts for a password without echoing it or putting it in
-shell history. It creates an ordinary Django account, not an administrator. There
-are no default login credentials or fabricated Steam-account histories. Use
-`./local-dev.sh user` only when a Django superuser is actually needed.
+There are no default credentials. This creates an ordinary Django account.
+Use `./local-dev.sh user` when you need a Django superuser.
 
-Open <http://localhost:5173>, sign in and create a fleet. Each fleet starts with
-five editable offence ladders and no tracked accounts. Add a real tracked account
-using its exact 17-digit SteamID, then record an observation. Provision colleagues
-with the same operator command before granting fleet membership.
+### 3. Create your first fleet
 
-Owners manage membership. Editors manage accounts, rules and cooldown evidence.
-Viewers can read their permitted fleets. An operator can belong to several fleets;
-being authenticated or being Django staff grants no implicit access to another
-fleet. At least one owner must remain.
+Open **[localhost:5173](http://localhost:5173)** and sign in with your new account.
 
-The production-build local Pages endpoint is <http://localhost:8788>. Port 5173
-provides live frontend reload. Both use the real Pages Function and Django API.
-Set `LOCAL_DEV_PORT`, `LOCAL_WEB_PORT` and `COMPOSE_PROJECT_NAME` when another
-local application uses those ports. Normal shutdown retains development data.
+1. Create a fleet. It starts with five editable offence ladders and no accounts.
+2. Review the default rules for your fleet.
+3. Add a Steam account using its exact 17-digit SteamID and a readable tag.
+4. Record its first cooldown, review the prediction and save the observation.
+5. Provision colleagues with the operator command, then add them as fleet members.
 
-## API generation and live updates
+| Local address | Purpose |
+| --- | --- |
+| [localhost:5173](http://localhost:5173) | Vite development server with live frontend updates |
+| [localhost:8788](http://localhost:8788) | Built frontend served through local Cloudflare Pages tooling |
 
-`up` exports the Django OpenAPI schema, generates TypeScript declarations, builds
-the API package and applies migrations before starting the stack. Development
-watchers then regenerate after backend Python edits and rebuild the client after
-schema or SDK-source changes. Invalid edits leave the last valid generated
-contract intact; a later correction triggers another attempt.
+Both routes use the real Pages Function and Django API. The built frontend on
+port 8788 needs a rebuild to reflect frontend changes; use port 5173 while editing.
+
+### Optional local configuration
+
+If another checkout uses the default project name or ports, copy
+[`.env.example`](.env.example) to `.env` and choose different values:
+
+```dotenv
+# Give this checkout its own containers, network and persistent volumes.
+COMPOSE_PROJECT_NAME=cooldown-counter
+
+# Choose free host ports for live development and the built frontend.
+LOCAL_DEV_PORT=5174
+LOCAL_WEB_PORT=8789
+```
+
+Keep those settings for subsequent commands so they address the same stack.
+The supplied defaults bind development ports to the host loopback interface.
+
+## Features
+
+- **Separate fleets.** Switch between fleets with explicit owner, editor and
+  viewer membership.
+- **Accounts and calendar.** Search by tag or SteamID, filter cooldowns by
+  account, status or offence, and inspect history and step-down forecasts.
+- **Reviewed reporting.** Keep cooldown start and observation time separate.
+  Preview the next step before saving, or choose a manual override with a reason.
+- **Versioned rules.** Edit offence ladders and decay policies while preserving
+  the versions used for existing assessments.
+- **Retained evidence.** Add observations to an existing cooldown without
+  advancing its ladder again. Archive offence types without deleting history.
+- **Conflict handling.** Refresh a preview when history or policy changes.
+  Retrying the same accepted request does not create duplicate evidence.
+- **Attributed changes.** Inspect fleet audit entries to see who made a change.
+
+Rule defaults are editable model inputs, not verified current Valve policy.
+All date/time inputs are labelled **UTC**. Durations use whole minutes.
+See the [time and history rules](docs/data-model.md#time-and-history) for decay,
+overlap, backdated evidence and validation behavior.
+
+### Fleet permissions
+
+| Capability | Owner | Editor | Viewer |
+| --- | --- | --- | --- |
+| Read fleet accounts, rules, history and audit entries | Yes | Yes | Yes |
+| Manage accounts, rules and cooldown evidence | Yes | Yes | No |
+| Add members, change roles and remove members | Yes | No | No |
+
+An operator can belong to multiple fleets. Django staff and superuser status do
+not grant implicit fleet access. Each fleet must retain at least one owner.
+Public signup and password recovery are not included.
+
+## Development
+
+### Architecture
+
+```mermaid
+flowchart LR
+    %% React uses the same-origin proxy; Django owns authorization and durable records.
+    Browser["Browser: React + TypeScript"] --> Proxy["Pages Function: /api"]
+    Proxy --> API["Django REST API + Gunicorn"]
+    API --> Database[(PostgreSQL)]
+```
+
+The backend uses Django REST Framework and PostgreSQL. The frontend uses React,
+TypeScript and Vite. Redis, Celery and Beat support the retained background-job
+and scheduler infrastructure checks. A single backend image runs the API,
+worker, scheduler and migration roles in separate containers.
+
+See [architecture and boundaries](docs/architecture.md) and the
+[ER diagram](docs/data-model.md#entity-relationship-diagram) for the detailed design.
+
+### Repository layout
+
+| Path | Responsibility |
+| --- | --- |
+| [`backend/tracker/`](backend/tracker/) | Fleet models, prediction, services, queries, serializers and HTTP views |
+| [`backend/accounts/`](backend/accounts/) | Django session login, logout and CSRF endpoints |
+| [`backend/platform_tools/`](backend/platform_tools/) | Operator provisioning and validated schema generation |
+| [`backend/tests/`](backend/tests/) | Backend unit, API, concurrency and deployment contract tests |
+| [`frontend/src/tracker/`](frontend/src/tracker/) | Workspace components, presentation helpers and colocated tests |
+| [`frontend/packages/api-client/`](frontend/packages/api-client/) | Generated contract and shared cookie/CSRF transport |
+| [`frontend/e2e/`](frontend/e2e/) | Playwright tests against the complete Docker stack |
+| [`frontend/tooling/`](frontend/tooling/) | API watcher and acceptance evidence validator |
+| [`deploy/k8s/`](deploy/k8s/) | Shared Kubernetes base and staging/production overlays |
+
+### Automatic API updates
+
+`./local-dev.sh up` exports Django's OpenAPI schema, generates TypeScript
+declarations and builds the client package. Development watchers then regenerate
+after backend edits and rebuild after schema or client-source changes. Invalid
+edits leave the last valid generated contract intact; correcting them triggers
+another attempt.
+
+When the watchers are stopped, regenerate explicitly:
 
 ```bash
+# Refresh the backend contract and rebuild its generated TypeScript client.
 ./local-dev.sh api-client
 ```
 
-Use this explicit command after API changes when development watchers are not
-running. Frontend development/build commands also generate and build the package.
-CI rejects drift in the checked-in schema and TypeScript declarations. Generated
-files must not be edited by hand.
+Commit both [`backend/openapi.json`](backend/openapi.json) and
+[`schema.d.ts`](frontend/packages/api-client/src/schema.d.ts) after an API change.
+CI rejects generated contract drift. Do not edit either generated file by hand.
+The shared client handles session cookies and CSRF; rule evaluation stays in Python.
 
-The TypeScript interface comes from Django serializers. The shared client owns
-session cookies, CSRF bootstrap and rotation. The browser does not contain a
-second escalation engine or store passwords/session credentials in local storage.
+### Common commands
 
-## Recording and history
+| Command | Purpose |
+| --- | --- |
+| `./local-dev.sh up` | Build and start development with source and API watchers |
+| `./local-dev.sh down` | Stop development while retaining stored data |
+| `./local-dev.sh logs` | Follow service logs |
+| `./local-dev.sh logs backend api-schema-watch api-client-watch` | Inspect backend and API-generation logs |
+| `./local-dev.sh operator --username bob` | Provision an ordinary operator |
+| `./local-dev.sh user` | Create a Django superuser |
+| `./local-dev.sh django check` | Run Django system checks |
+| `./local-dev.sh django makemigrations` | Generate migrations inside Docker |
+| `./local-dev.sh migrate` | Apply database migrations |
+| `./local-dev.sh shell` | Open the Django shell |
+| `./local-dev.sh help` | List supported commands |
 
-All date/time inputs are labelled UTC. Cooldown start, observation time and
-server recording time are separate facts. Remaining duration uses positive whole
-minutes; mixed day/hour/minute components are additive. Future timestamps,
-invalid values and remaining duration above the chosen total need correction.
-An override selects an existing step and requires an explanation.
-
-A new offence advances a ladder once. Use an additional observation on an
-existing cooldown when reporting it again; that does not create another offence.
-Preview uses history at the entered start time and returns revision tokens.
-Concurrent history or policy changes require a refreshed review before saving.
-Stable request IDs prevent an ambiguous retry from creating duplicate evidence.
-
-Rule edits publish a new immutable version. Existing cooldowns retain their saved
-assessment and policy version, including after backdated evidence is added.
-Archiving a type retains its history. Overlapping restrictions delay clean time
-until the latest outstanding expiry. The default policy drops one level per
-completed seven-day clean window, with explicit full-reset and no-decay options.
+**Data removal:** `./local-dev.sh reset --yes` deletes this development project's
+containers and data. Use `down` for normal shutdown.
 
 ## Tests and acceptance
 
+Run the complete local verification with:
+
 ```bash
-./local-dev.sh test backend
-./local-dev.sh test frontend
-./local-dev.sh test browser
-./local-dev.sh test e2e
-./local-dev.sh test deployment
+# Run every test layer, then verify the combined acceptance evidence.
 ./local-dev.sh test all
-./local-dev.sh acceptance
 ```
 
-Backend checks run Ruff, pytest, Django checks and migration drift against an
-isolated PostgreSQL project. They include actual concurrent-write tests. Frontend
-checks run ESLint, TypeScript, unit/tooling tests, the static build and Pages
-Function compilation. Component tests run in real Chromium through Playwright.
-Full-stack Playwright tests use Chromium, Firefox and WebKit against actual
-Pages, Gunicorn, PostgreSQL, Redis, Celery and Beat, with separate test volumes.
-The agreed browser baseline starts at 320 CSS pixels with 200% text enlargement.
-The combined gate verifies the requirement ledger against actual results from
-all test layers. `acceptance` can reassemble that evidence without rerunning
-tests. Missing reports or failing named assertions do not count as passes.
+| Command | Checks |
+| --- | --- |
+| `./local-dev.sh test backend` | Ruff, pytest, PostgreSQL concurrency, coverage, Django checks and migration drift |
+| `./local-dev.sh test frontend` | ESLint, TypeScript, unit/tooling tests, production build and Pages Function compilation |
+| `./local-dev.sh test browser` | Component tests in real Chromium through Playwright |
+| `./local-dev.sh test e2e` | Full-stack tests in Chromium, Firefox and WebKit |
+| `./local-dev.sh test deployment` | Kubernetes renders, schema validation and migration/release contracts |
+| `./local-dev.sh acceptance` | Verify combined acceptance from existing complete test reports |
 
-Unit and component coverage are written under `frontend/coverage/unit` and
-`frontend/coverage/browser`. Browser reports and failure artifacts are saved under
-`frontend/playwright-report` and `frontend/test-results`. Full details and the
-limits of acceptance evidence are in [docs/testing.md](docs/testing.md).
+Full-stack tests use real Django sessions, PostgreSQL, Redis, Celery, Beat and
+the Pages proxy. Their disposable Compose projects keep development data and
+unrelated services separate.
 
-## Daily operations
+The browser baseline covers desktop and mobile layouts from **320 CSS pixels**
+wide, **200% text enlargement**, keyboard use and reduced motion.
 
-```bash
-./local-dev.sh logs
-./local-dev.sh logs backend api-schema-watch api-client-watch
-./local-dev.sh django check
-./local-dev.sh django makemigrations
-./local-dev.sh migrate
-./local-dev.sh shell
-./local-dev.sh down
-```
+The [acceptance ledger](frontend/acceptance.json) maps 65 outcomes and 363 original
+candidate requirements to evidence or explicit alternatives and assumptions.
+The combined gate checks actual runner results; failed, skipped, flaky or missing
+assertions cannot count as passes. `acceptance` reads existing reports and does
+not rerun the tests.
 
-`./local-dev.sh reset --yes` deletes this development project's data. Do not use
-it for a normal restart. The full-stack test runner cleans only its disposable
-project, preserving development volumes and unrelated applications.
+Coverage is written to `backend/coverage.xml` and `frontend/coverage/`. Browser
+reports and failure artifacts are written to `frontend/playwright-report/` and
+`frontend/test-results/`. These generated files are excluded from Git.
 
-## Design and architecture
+See the [testing guide](docs/testing.md),
+[acceptance strategy](docs/testing.md#acceptance-traceability) and
+[recorded local validation](docs/testing.md#latest-local-validation) for commands,
+results and evidence limits.
 
-- [ER diagram and data invariants](docs/data-model.md)
-- [Standalone ER visual](docs/er-diagram.html)
-- [Architecture and boundaries](docs/architecture.md)
-- [Testing and acceptance strategy](docs/testing.md)
-- [User-story discovery index](2-user-stories/README.md)
-- [Candidate requirements](3-requirements/requirements.md)
-- [Original design and evidence limits](docs/design/README.md)
-- [Deployment runbook](docs/deployment.md)
-- [Portable Kubernetes overlays](deploy/k8s/README.md)
+## Documentation
 
-Python belongs in `backend/`, frontend source and tooling in `frontend/`.
-The template's background-job health and scheduler checks remain for
-infrastructure compatibility; the product workspace uses the tracker domain.
-Hosting publication, real cluster rollouts, operator backup policy and official
-game-rule validation are separate operational responsibilities. Test results do
-not claim those activities have occurred.
+| Document | What it covers |
+| --- | --- |
+| [Data model and ER diagram](docs/data-model.md) | Fleet ownership, relationships, constraints and historical evidence |
+| [Standalone ER visual](docs/er-diagram.html) | The entity relationships as a self-contained HTML diagram |
+| [Architecture](docs/architecture.md) | Application boundaries, authentication, API generation and runtime roles |
+| [Testing and acceptance](docs/testing.md) | Test layers, browser baseline, reports and validation limits |
+| [Acceptance ledger](frontend/acceptance.json) | Requirement dispositions and named executable evidence |
+| [Deployment runbook](docs/deployment.md) | Backend image publication, Pages configuration and operational setup |
+| [Kubernetes runbook](deploy/k8s/README.md) | GitOps configuration, migration gates and environment promotion |
+| [User stories](2-user-stories/README.md) | The 65 outcomes extracted from the original design |
+| [Candidate requirements](3-requirements/requirements.md) | The original 363 testable discovery requirements |
+| [Discovery coverage and review](3-requirements/coverage.md) | Source traceability, prototype conflicts and discovery review notes |
+| [Discovery decisions](3-requirements/open-questions.md) | The historical decision register; current model choices are recorded in the data model |
+| [Original design evidence](docs/design/README.md) | Supplied prototype, source identity and evidence limits |
+| [Operator profile](1-user-profiles/UP-001-fleet-operator.md) | The actor inferred from the supplied design |
+| [Contributor guidance](.agents/README.md) | Repository boundaries, engineering rules and bundled skills |
+
+The discovery documents preserve the original design baseline. Use the current
+data model and acceptance ledger to see which behavior was implemented, replaced
+by a selected alternative or based on an implementation assumption.
+
+## Deployment
+
+The deployment target is **Cloudflare Pages** for the frontend and **Kubernetes**
+for the Django API, worker and scheduler. The
+[CI workflow](.github/workflows/ci.yaml) gates backend image publication on the
+test, generated-contract, acceptance and deployment-contract jobs. Successful
+default-branch and `v*` tag builds publish the backend image to GHCR.
+
+Pages publication and GitOps image promotion are separate manual actions.
+Configure actual hosts, secrets, database and broker services, registry access
+and backups before deploying. Local test results do not prove a hosted rollout.
+
+Follow the [deployment runbook](docs/deployment.md) and
+[Kubernetes configuration guide](deploy/k8s/README.md) for the full procedure.
