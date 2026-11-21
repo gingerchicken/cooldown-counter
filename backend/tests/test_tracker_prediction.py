@@ -269,3 +269,68 @@ def test_full_reset_forecast_has_one_state_zero_marker(instant):
     assert [(point.at, point.stored_step, point.next_step) for point in points] == [
         (instant + timedelta(days=7), 0, 1)
     ]
+
+
+def test_ordinary_duration_saturates_but_account_level_keeps_increasing(instant):
+    """Two consecutive week-long penalties must retain their distinct recovery periods."""
+    # Start with a known fourth-level penalty that has just expired.
+    policy = PolicySpec((30, 120, 1440, 10080), mechanism="ordinary")
+    fourth = HistoryEntry(instant - timedelta(days=7), instant, 4)
+    fifth = predict(policy, [fourth], instant)
+    assert (fifth.step, fifth.total_minutes) == (5, 10080)
+    # The fifth level still predicts a week after two clean weeks since its expiry.
+    expiry = instant + timedelta(days=7)
+    history = [fourth, HistoryEntry(instant, expiry, fifth.step)]
+    recovered = predict(policy, history, expiry + timedelta(days=14))
+    assert (recovered.base_step, recovered.step, recovered.total_minutes) == (3, 4, 10080)
+    # Calendar reductions preserve the underlying level even with identical visible duration.
+    points = forecast(policy, history, expiry)
+    assert [(point.next_step, point.total_minutes) for point in points[:2]] == [
+        (5, 10080),
+        (4, 10080),
+    ]
+
+
+def test_imported_ordinary_seven_day_penalty_has_unknown_recovery(instant):
+    """A seven-day timer alone cannot establish when the account will fall below level four."""
+    # Selecting the top displayed duration on an imported event identifies only a lower bound.
+    policy = PolicySpec((30, 120, 1440, 10080), mechanism="ordinary")
+    imported = predict(policy, [], instant, forced_step=4)
+    assert imported.level_is_lower_bound
+    # An unknown historical upper bound survives even long periods of elapsed clean time.
+    expiry = instant + timedelta(days=7)
+    history = [HistoryEntry(instant, expiry, imported.step, level_is_lower_bound=True)]
+    latest = predict(policy, history, expiry + timedelta(days=28))
+    assert latest.level_is_lower_bound
+    assert latest.next_decay_at is None
+    assert forecast(policy, history, expiry) == ()
+    # A lower ordinary tier from an actual notice identifies the exact assigned level again.
+    assert not predict(policy, history, expiry, forced_step=2).level_is_lower_bound
+
+
+@pytest.mark.parametrize("mechanism", ["vacnet", "griefing"])
+def test_observation_only_policies_have_no_duration_schedule(instant, mechanism):
+    """A game mechanism with unpublished stages cannot issue an invented next duration."""
+    # Empty durations describe an observation-only policy and cannot enter the ladder engine.
+    policy = PolicySpec((), decay_mode="none", mechanism=mechanism)
+    with pytest.raises(ValueError, match="observation"):
+        predict(policy, [], instant)
+    assert forecast(policy, [], instant) == ()
+
+
+def test_calendar_window_bounds_an_ordinary_forecast(instant):
+    """A single page returns only weekly markers in its half-open date range."""
+    # This high known level represents many consecutive penalties with the same seven-day duration.
+    policy = PolicySpec((30, 120, 1440, 10080), mechanism="ordinary")
+    history = [HistoryEntry(instant - timedelta(days=7), instant, 100000)]
+    # Only the lower bound belongs to this calendar page; its exclusive end is the next marker.
+    points = forecast(
+        policy,
+        history,
+        instant,
+        start=instant + timedelta(days=14),
+        end=instant + timedelta(days=21),
+    )
+    assert [(point.at, point.stored_step) for point in points] == [
+        (instant + timedelta(days=14), 99998)
+    ]
