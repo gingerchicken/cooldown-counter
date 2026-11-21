@@ -7,6 +7,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from tracker.prediction import ORDINARY_DURATIONS
+
 from .accounts import SteamAccount
 from .base import IdentifiedRecord
 from .policies import PolicyVersion
@@ -25,11 +27,20 @@ class CooldownEvent(IdentifiedRecord):
     policy = models.ForeignKey(PolicyVersion, on_delete=models.PROTECT, related_name="events")
     # Issue/start time is distinct from evidence observation and row creation time.
     started_at = models.DateTimeField()
-    # Assigned step is the saved one-based result, including an accepted manual override.
-    assigned_step = models.PositiveIntegerField()
-    # Total and expiry preserve the assessment rather than replaying it against later rules.
-    total_minutes = models.PositiveIntegerField()
-    expires_at = models.DateTimeField()
+    # An observation-only mechanism has no published level, total or predicted expiry.
+    assigned_step = models.PositiveIntegerField(null=True, blank=True)
+    total_minutes = models.PositiveIntegerField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    # A known seven-day ordinary penalty can establish a lower bound on its underlying level.
+    level_is_lower_bound = models.BooleanField(default=False)
+    # The latest applicable timer reading estimates expiry independently of the original prediction.
+    observed_expires_at = models.DateTimeField(null=True, blank=True)
+    # Only VACNet notices distinguish a flagged player from a member of their queued party.
+    vac_attribution = models.CharField(
+        max_length=7,
+        choices=[("unknown", "Unknown"), ("self", "Flagged player"), ("party", "Party member")],
+        default="unknown",
+    )
     # Override state retains explicit operator intervention alongside its explanation.
     is_override = models.BooleanField(default=False)
     override_reason = models.TextField(blank=True, default="")
@@ -56,6 +67,26 @@ class CooldownEvent(IdentifiedRecord):
                 name="tracker_event_expiry_after_start",
             ),
             models.CheckConstraint(
+                condition=models.Q(
+                    assigned_step__isnull=False,
+                    total_minutes__isnull=False,
+                    expires_at__isnull=False,
+                )
+                | models.Q(
+                    assigned_step__isnull=True,
+                    total_minutes__isnull=True,
+                    expires_at__isnull=True,
+                    observed_expires_at__isnull=False,
+                    is_override=False,
+                    level_is_lower_bound=False,
+                ),
+                name="tracker_event_complete_assessment",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(observed_expires_at__gt=models.F("started_at")),
+                name="tracker_event_timer_after_start",
+            ),
+            models.CheckConstraint(
                 condition=models.Q(is_override=False) | ~models.Q(override_reason=""),
                 name="tracker_event_override_reason",
             ),
@@ -79,18 +110,33 @@ class CooldownEvent(IdentifiedRecord):
             # A caller belonging to both fleets still cannot combine their account and rule rows.
             if self.account.fleet_id != self.policy.offence_type.fleet_id:
                 errors["policy"] = "The policy and account must belong to the same fleet."
-            # The actual published step, rather than the current type version, owns this duration.
-            selected_duration = (
-                self.policy.steps.filter(position=self.assigned_step)
-                .values_list("duration_minutes", flat=True)
-                .first()
-            )
-            if selected_duration is None:
-                # Missing steps are invalid references, never a fabricated fallback ladder.
-                errors["assigned_step"] = "Choose an existing step of the saved policy."
-            elif self.total_minutes != selected_duration:
-                # Pinned policy and accepted snapshot must agree at initial persistence.
-                errors["total_minutes"] = "The total must match the selected policy step."
+            # Only VACNet considers whether the restriction names the player or a party member.
+            if self.vac_attribution != "unknown" and self.policy.mechanism != "vacnet":
+                errors["vac_attribution"] = "Only VACNet records self or party attribution."
+            if self.policy.mechanism in {"vacnet", "griefing"}:
+                # Special restrictions have evidence but no published exact ladder to validate.
+                if self.assigned_step is not None:
+                    errors["assigned_step"] = (
+                        "This mechanism records observed timers without a level."
+                    )
+            else:
+                # Ordinary levels keep increasing after the final duration band.
+                position = self.assigned_step
+                if self.policy.mechanism == "ordinary" and position is not None:
+                    position = min(position, len(ORDINARY_DURATIONS))
+                # Persisted totals must agree with the version pinned at acceptance.
+                selected_duration = (
+                    self.policy.steps.filter(position=position)
+                    .values_list("duration_minutes", flat=True)
+                    .first()
+                )
+                if selected_duration is None:
+                    errors["assigned_step"] = "Choose an existing step of the saved policy."
+                elif self.total_minutes != selected_duration:
+                    errors["total_minutes"] = "The total must match the selected policy step."
+            if self.level_is_lower_bound and self.policy.mechanism != "ordinary":
+                # Uncertainty about a hidden level belongs only to the ordinary competitive model.
+                errors["level_is_lower_bound"] = "Only ordinary levels can be marked as a minimum."
         if self.started_at and self.expires_at and self.total_minutes:
             # Naive datetimes do not silently acquire the deployment server's local timezone.
             if timezone.is_naive(self.started_at) or timezone.is_naive(self.expires_at):
@@ -154,9 +200,11 @@ class Observation(IdentifiedRecord):
                 errors["observed_at"] = "Observation timestamps must include a timezone."
             elif self.observed_at < self.event.started_at:
                 errors["observed_at"] = "Observation time cannot precede cooldown start."
-            # Remaining evidence must fit the accepted total or the assessment needs correction.
+            # Custom rules retain their configured limit. Game notices can contradict a prediction.
             if (
                 self.remaining_minutes is not None
+                and self.event.policy.mechanism == "custom"
+                and self.event.total_minutes is not None
                 and self.remaining_minutes > self.event.total_minutes
             ):
                 errors["remaining_minutes"] = (

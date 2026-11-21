@@ -45,6 +45,17 @@ class PolicyVersion(IdentifiedRecord):
     update published versions; scalar checks here supplement that write boundary.
     """
 
+    class Mechanism(models.TextChoices):
+        """Choose the account history and evidence rules for this immutable revision."""
+
+        # A custom policy retains its own fleet-configured durations and same-reason history.
+        CUSTOM = "custom", "Custom ladder"
+        # Qualifying ordinary reasons advance a shared competitive level for this account.
+        ORDINARY = "ordinary", "Ordinary competitive"
+        # The public VACNet and grief-report rules do not define a predictable duration sequence.
+        VACNET = "vacnet", "VACNet restriction"
+        GRIEFING = "griefing", "Griefing reports"
+
     class DecayMode(models.TextChoices):
         """Expose only the supported expiry-anchored reduction strategies."""
 
@@ -59,6 +70,8 @@ class PolicyVersion(IdentifiedRecord):
     offence_type = models.ForeignKey(OffenceType, on_delete=models.PROTECT, related_name="versions")
     # Services serialize publication on the parent type before choosing the next number.
     number = models.PositiveIntegerField()
+    # Legacy revisions default to custom so migration does not reinterpret evidence by its name.
+    mechanism = models.CharField(max_length=10, choices=Mechanism, default=Mechanism.CUSTOM)
     # The visible default is one-level decay rather than an implicit hidden setting.
     decay_mode = models.CharField(max_length=10, choices=DecayMode, default=DecayMode.STEP_DOWN)
     # A day means 24 elapsed hours, independent of operator timezone or daylight saving.
@@ -89,6 +102,10 @@ class PolicyVersion(IdentifiedRecord):
             models.CheckConstraint(
                 condition=models.Q(decay_mode__in=["step_down", "full_reset", "none"]),
                 name="tracker_policy_mode_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(mechanism__in=["custom", "ordinary", "vacnet", "griefing"]),
+                name="tracker_policy_mechanism_valid",
             ),
         ]
         # Descending number supports the current-version lookup under one type.
