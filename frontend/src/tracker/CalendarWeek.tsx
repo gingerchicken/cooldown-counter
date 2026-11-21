@@ -1,6 +1,6 @@
 import type { CooldownEvent, Forecast } from "./types";
 import { isoDate, weekEntries } from "./calendar";
-import { formatDuration, severity } from "./format";
+import { severity } from "./format";
 
 /**
  * Render the seven UTC days for month using supplied recorded events and separate forecasts.
@@ -70,7 +70,7 @@ export function CalendarWeek({
                 onAccount(entry.accountId);
               }}
             >
-              <strong>{formatDuration(entry.minutes)}</strong> {entry.label}
+              <strong>{entry.durationLabel}</strong> {entry.label}
             </button>
           );
         })}

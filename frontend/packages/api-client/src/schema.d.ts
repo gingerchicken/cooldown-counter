@@ -299,6 +299,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/fleets/{fleet_id}/warnings/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Record a new notice or return the original on an identical retry. */
+        post: operations["fleet_warnings_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health/": {
         parameters: {
             query?: never;
@@ -389,7 +406,7 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description A fleet row with exact identity, availability and all independent predictions. */
+        /** @description A fleet row with exact identity, availability and all current predictions. */
         Account: {
             /** Format: uuid */
             id: string;
@@ -427,6 +444,7 @@ export interface components {
             /** Format: date-time */
             first_observed: string | null;
             events: components["schemas"]["Event"][];
+            warnings: components["schemas"]["Warning"][];
         };
         /** @description Preserve the exact SteamID digit sequence and a separate display tag. */
         AccountInputRequest: {
@@ -493,6 +511,8 @@ export interface components {
         DecayModeEnum: "step_down" | "full_reset" | "none";
         /** @description An immutable offence assessment and every observation attached to that event. */
         Event: {
+            level_is_lower_bound: boolean;
+            mechanism: components["schemas"]["MechanismEnum"];
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -508,8 +528,13 @@ export interface components {
             started_at: string;
             /** Format: date-time */
             expires_at: string;
-            assigned_step: number;
-            total_minutes: number;
+            /** Format: date-time */
+            predicted_expires_at: string | null;
+            /** Format: date-time */
+            observed_expires_at: string | null;
+            vac_attribution: components["schemas"]["VacAttributionEnum"];
+            assigned_step: number | null;
+            total_minutes: number | null;
             is_override: boolean;
             override_reason: string;
             transition: string;
@@ -537,6 +562,7 @@ export interface components {
             /** Format: date-time */
             observed_at: string;
             remaining_minutes: number;
+            vac_attribution?: components["schemas"]["VacAttributionEnum"];
             /** @default  */
             override_reason: string;
         };
@@ -608,6 +634,14 @@ export interface components {
             username: string;
             password: string;
         };
+        /**
+         * @description * `custom` - custom
+         *     * `ordinary` - ordinary
+         *     * `vacnet` - vacnet
+         *     * `griefing` - griefing
+         * @enum {string}
+         */
+        MechanismEnum: "custom" | "ordinary" | "vacnet" | "griefing";
         /** @description A scoped provisioned principal without credentials or global user privileges. */
         Membership: {
             id: number;
@@ -657,6 +691,7 @@ export interface components {
         };
         /** @description An immutable rule version and ordered whole-minute ladder. */
         Policy: {
+            mechanism: components["schemas"]["MechanismEnum"];
             /** Format: uuid */
             id: string;
             number: number;
@@ -666,29 +701,32 @@ export interface components {
         };
         /** @description A server-derived next-offence estimate, distinct from a saved observation. */
         Prediction: {
+            level_is_lower_bound: boolean;
+            mechanism: components["schemas"]["MechanismEnum"];
             /** Format: uuid */
             type_id: string;
             type_name: string;
-            step: number;
+            step: number | null;
             total_steps: number;
-            total_minutes: number;
-            base_step: number;
+            total_minutes: number | null;
+            base_step: number | null;
             sample_count: number;
-            recorded_step: number;
+            recorded_step: number | null;
             /** Format: date-time */
             next_decay_at: string | null;
             transition: string;
         };
         /** @description An assessment and its reviewed policy/history concurrency tokens. */
         Preview: {
+            level_is_lower_bound: boolean;
             /** Format: uuid */
             policy_id: string;
             history_revision: number;
-            step: number;
-            total_minutes: number;
+            step: number | null;
+            total_minutes: number | null;
             /** Format: date-time */
-            expires_at: string;
-            base_step: number;
+            expires_at: string | null;
+            base_step: number | null;
             transition: string;
             sample_count: number;
         };
@@ -713,31 +751,25 @@ export interface components {
         Session: {
             readonly user: components["schemas"]["User"] | null;
         };
-        /** @description Describe metadata and a nonempty ladder for one new stable offence identity. */
+        /** @description Describe a reason and either its game mechanism or its custom duration ladder. */
         TypeInputRequest: {
             name: string;
-            /** @default  */
-            code: string;
-            /** @default  */
-            note: string;
-            steps: number[];
-            /** @default 7 */
-            clean_window_days: number;
-            /** @default step_down */
-            decay_mode: components["schemas"]["DecayModeEnum"];
+            code?: string;
+            note?: string;
+            steps?: number[];
+            mechanism?: components["schemas"]["MechanismEnum"];
+            clean_window_days?: number;
+            decay_mode?: components["schemas"]["DecayModeEnum"];
         };
         /** @description An editor supplies the reviewed policy token before publishing or renaming. */
         TypeUpdateRequest: {
-            name: string;
-            /** @default  */
-            code: string;
-            /** @default  */
-            note: string;
-            steps: number[];
-            /** @default 7 */
-            clean_window_days: number;
-            /** @default step_down */
-            decay_mode: components["schemas"]["DecayModeEnum"];
+            name?: string;
+            code?: string;
+            note?: string;
+            steps?: number[];
+            mechanism?: components["schemas"]["MechanismEnum"];
+            clean_window_days?: number;
+            decay_mode?: components["schemas"]["DecayModeEnum"];
             /** Format: uuid */
             expected_policy_id: string;
         };
@@ -745,6 +777,35 @@ export interface components {
         User: {
             readonly id: number;
             readonly username: string;
+        };
+        /**
+         * @description * `unknown` - unknown
+         *     * `self` - self
+         *     * `party` - party
+         * @enum {string}
+         */
+        VacAttributionEnum: "unknown" | "self" | "party";
+        /** @description An attributed warning kept outside the account's issued cooldown history. */
+        Warning: {
+            /** Format: uuid */
+            id: string;
+            type_name: string;
+            /** Format: date-time */
+            observed_at: string;
+            created_by: string;
+        };
+        /** @description Record a warning without requesting a predicted level or timer. */
+        WarningInputRequest: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            account_id: string;
+            /** Format: uuid */
+            type_id: string;
+            /** Format: uuid */
+            policy_id: string;
+            /** Format: date-time */
+            observed_at: string;
         };
     };
     responses: never;
@@ -1335,6 +1396,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OffenceType"];
+                };
+            };
+        };
+    };
+    fleet_warnings_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                fleet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WarningInputRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["WarningInputRequest"];
+                "multipart/form-data": components["schemas"]["WarningInputRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Warning"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Warning"];
                 };
             };
         };

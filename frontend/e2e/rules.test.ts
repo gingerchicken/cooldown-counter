@@ -2,21 +2,24 @@ import { expect, test } from "./fixtures";
 import { accountDetail, csrfRequest, fillReport, readJson, recordCooldown, selectFleet } from "./support";
 import type { components } from "@template/api-client";
 
-test("[RULE-001] [US-037] [US-038] the five designed ladders are editable model inputs without fake account history", async ({ fleetPage: page, trackedFleet }) => {
+test("[RULE-001] [US-037] [US-038] the five seeded reasons select game mechanisms without fabricating account history", async ({ fleetPage: page, trackedFleet }) => {
   // Defaults are asserted as this application's editable baseline, not as verified Valve policy.
   await page.getByRole("button", { name: "Cooldowns", exact: true }).click();
   // Each expected ladder is an editable application default expressed in whole elapsed minutes.
   const expectedSteps: Record<string, number[]> = {
-    VACLive: [1200, 10080, 43200],
+    VACLive: [],
     Abandoning: [30, 120, 1440, 10080],
     "Team Damage": [30, 120, 1440, 10080],
     Kicking: [30, 120, 1440, 10080],
-    GriefReports: [120, 1440, 10080, 43200],
+    GriefReports: [],
   };
   for (const [name, durations] of Object.entries(expectedSteps)) {
     // Each expected control and API ladder must refer to the same visible offence identity.
     await expect(page.getByRole("button", { name: `Edit ${name}`, exact: true })).toBeVisible();
-    expect(trackedFleet.types.find((definition) => definition.name === name)?.policy.steps).toEqual(durations);
+    // Special game notices have no assumed stages. Ordinary reasons use the published bands.
+    const policy = trackedFleet.types.find((definition) => definition.name === name)!.policy;
+    expect(policy.steps).toEqual(durations);
+    expect(policy.mechanism).toBe(name === "VACLive" ? "vacnet" : name === "GriefReports" ? "griefing" : "ordinary");
   }
   await expect(page.getByText("These are model inputs, not verified Valve guarantees.", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Transition rules", exact: true })).toBeVisible();
@@ -83,6 +86,8 @@ test("[RULE-004] [US-045] [US-050] rename and policy publication preserve old to
   await expect(dialog.getByLabel("Name", { exact: true })).toHaveValue("Abandoning");
   await dialog.getByLabel("Name", { exact: true }).fill("Renamed abandoning");
   await dialog.getByRole("textbox", { name: "Note", exact: true }).fill("Reviewed model revision.");
+  // A numeric departure from the game rules requires choosing a custom fleet model.
+  await dialog.getByRole("combobox", { name: "Cooldown model", exact: true }).selectOption("custom");
   await dialog.getByLabel("Step 1 amount", { exact: true }).fill("45");
   await dialog.getByRole("button", { name: "Save offence type", exact: true }).click();
   await expect(dialog).not.toBeVisible();
@@ -152,6 +157,8 @@ test("[RULE-007] [US-049] explicit alternate decay policies remain expiry anchor
   await page.getByRole("button", { name: "Edit Abandoning", exact: true }).click();
   // The named type editor keeps its actions separate from report and background controls.
   const editor = page.getByRole("dialog", { name: "Edit offence type", exact: true });
+  // Alternative decay schedules belong to custom policies.
+  await editor.getByRole("combobox", { name: "Cooldown model", exact: true }).selectOption("custom");
   await editor.getByRole("combobox", { name: "Decay mode", exact: true }).selectOption("full_reset");
   await editor.getByRole("button", { name: "Save offence type", exact: true }).click();
   await expect(editor).not.toBeVisible();

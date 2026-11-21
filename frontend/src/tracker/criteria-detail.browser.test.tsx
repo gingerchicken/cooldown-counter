@@ -77,6 +77,7 @@ it("[RQ-125 RQ-126 RQ-127 RQ-132 RQ-134 RQ-136] renders accepted account identit
         },
       ],
     }),
+    warnings: [],
     events: [eventFixture()],
   };
   // Only this detail boundary is mocked; the identity, prediction and history views are real components.
@@ -140,6 +141,7 @@ it("[RQ-128] uses an absent first-observed placeholder and explains a genuine hi
   // An empty history must not fabricate a current date merely because the component mounted today.
   const account = {
     ...accountFixture({ first_observed: null, event_count: 0 }),
+    warnings: [],
     events: [],
   };
   // A real detail fetch resolves to an explicit empty history, distinct from loading and failure.
@@ -170,7 +172,7 @@ it("[RQ-128] uses an absent first-observed placeholder and explains a genuine hi
   await expect
     .element(
       screen.getByText(
-        "No history on this account. A first offence uses that ladder's first step.",
+        "No history on this account. Prior cooldowns outside this fleet can affect estimates.",
         { exact: true },
       ),
     )
@@ -185,6 +187,7 @@ it("[RQ-138] explains the latest outstanding UTC expiry before clean time can be
       active_until: "2026-09-02T12:34:00Z",
       event_count: 1,
     }),
+    warnings: [],
     events: [eventFixture()],
   };
   // The accepted detail payload supplies current availability; no browser-side penalty calculation is substituted.
@@ -203,7 +206,7 @@ it("[RQ-138] explains the latest outstanding UTC expiry before clean time can be
   await expect
     .element(
       screen.getByText(
-        "Currently on cooldown until 2026-09-02 12:34 UTC. Clean time cannot begin before the latest outstanding expiry.",
+        "Currently on cooldown until 2026-09-02 12:34 UTC. Clean time cannot begin before the latest outstanding expiry for the relevant ladder.",
         { exact: true },
       ),
     )
@@ -257,6 +260,7 @@ it("[RQ-088] applies the same seven-day severity in calendar, reference and acco
           { ...accountFixture().predictions[0], total_minutes: 10080 },
         ],
       }),
+      warnings: [],
       events: [],
     };
   // Separate component roots avoid a synthetic shared severity implementation in the test itself.

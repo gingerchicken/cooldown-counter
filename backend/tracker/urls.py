@@ -11,7 +11,7 @@ from .views.catalogue import (
 )
 from .views.fleets import FleetListView, MemberDetailView, MemberListView
 from .views.history import AuditListView, CalendarView
-from .views.reports import EventCreateView, ObservationCreateView, PreviewView
+from .views.reports import EventCreateView, ObservationCreateView, PreviewView, WarningCreateView
 
 # Health/auth remain independent template boundaries; this module owns only tracker endpoints.
 urlpatterns = [
@@ -38,6 +38,7 @@ urlpatterns = [
         name="fleet-type-archive",
     ),
     path("fleets/<uuid:fleet_id>/preview/", PreviewView.as_view(), name="fleet-preview"),
+    path("fleets/<uuid:fleet_id>/warnings/", WarningCreateView.as_view(), name="fleet-warnings"),
     path("fleets/<uuid:fleet_id>/events/", EventCreateView.as_view(), name="fleet-events"),
     path(
         "fleets/<uuid:fleet_id>/events/<uuid:event_id>/observations/",

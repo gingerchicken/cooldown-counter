@@ -2,6 +2,11 @@ import { useState } from "react";
 import type { OffenceType } from "./types";
 import type { TrackerApi } from "./api";
 import { describeError } from "./api";
+import {
+  mechanismGuidance,
+  mechanismNames,
+  usesObservedTimer,
+} from "./mechanisms";
 import { formatDuration, severity } from "./format";
 
 /**
@@ -81,10 +86,17 @@ export function TypeReference({
                 {type.policy.number}
               </p>
               <p className="small">
-                {type.policy.decay_mode === "none"
-                  ? "No decay"
-                  : `${type.policy.clean_window_days} clean days · ${type.policy.decay_mode === "full_reset" ? "full reset" : "step down one level"}`}
+                <strong>{mechanismNames[type.policy.mechanism]}</strong>
               </p>
+              {type.policy.mechanism === "custom" ? (
+                <p className="small">
+                  {type.policy.decay_mode === "none"
+                    ? "No decay"
+                    : `${type.policy.clean_window_days} clean days · ${type.policy.decay_mode === "full_reset" ? "full reset" : "step down one level"}`}
+                </p>
+              ) : (
+                <p>{mechanismGuidance[type.policy.mechanism]}</p>
+              )}
               <div className="toolbar-buttons">
                 <button
                   className="secondary"
@@ -131,22 +143,33 @@ export function TypeReference({
                 </p>
               )}
             </div>
-            <ol className="ladder-timeline">
-              {type.policy.steps.map((duration, index) => {
-                // duration is saved whole minutes; index supplies its one-based position in this policy.
-                // Labels communicate step order and duration without relying on severity color alone.
-                return (
-                  <li key={index} className={severity(duration)}>
-                    <strong>{formatDuration(duration)}</strong>
-                    <span className="ladder-dot" />
-                    <span>Step {index + 1}</span>
-                  </li>
-                );
-              })}
-              <li className="muted">
-                <span>Then holds</span>
-              </li>
-            </ol>
+            {!usesObservedTimer(type.policy.mechanism) && (
+              <ol className="ladder-timeline">
+                {type.policy.steps.map((duration, index) => {
+                  // duration is saved whole minutes; index supplies its one-based position in this policy.
+                  // Labels communicate step order and duration without relying on severity color alone.
+                  return (
+                    <li key={index} className={severity(duration)}>
+                      <strong>{formatDuration(duration)}</strong>
+                      <span className="ladder-dot" />
+                      <span>
+                        {type.policy.mechanism === "ordinary"
+                          ? "Level"
+                          : "Step"}{" "}
+                        {index + 1}
+                      </span>
+                    </li>
+                  );
+                })}
+                <li className="muted">
+                  <span>
+                    {type.policy.mechanism === "ordinary"
+                      ? "Level 4 and above"
+                      : "Then holds"}
+                  </span>
+                </li>
+              </ol>
+            )}
           </article>
         );
       })}
@@ -158,19 +181,20 @@ export function TypeReference({
       <section className="panel">
         <h3>Transition rules</h3>
         <p>
-          <strong>Advance.</strong> Each new offence advances that account's
-          independent ladder once, capped at its final step.
+          <strong>Advance.</strong> Ordinary competitive reasons share an
+          account level. The duration stops increasing at seven days. The level
+          can keep rising.
         </p>
         <p>
-          <strong>Decay.</strong> Each type defines its own clean window and
-          mode. Clean time starts after the latest outstanding expiry. Step
-          down removes one stored level for each full clean window, with a
-          minimum state of zero. Full reset clears the stored state after one
-          full window. No decay retains the saved state.
+          <strong>Decay.</strong> Custom fleet ladders define their own clean
+          window and mode. Clean time starts after the latest outstanding
+          expiry. Step down removes one stored level for each full clean window,
+          with a minimum state of zero. Full reset clears the stored state after
+          one full window. No decay retains the saved state.
         </p>
         <p>
-          <strong>Isolation.</strong> Accounts, fleets and offence types have
-          independent histories.
+          <strong>Isolation.</strong> Accounts and fleets have separate
+          histories. A custom ladder uses only its own reason.
         </p>
         <p>
           <strong>Preservation.</strong> Edits create new policy versions. Saved

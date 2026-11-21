@@ -92,7 +92,7 @@ test("[WORK-003] [US-008] [US-009] [US-010] [US-011] combined filters use exact 
 });
 
 test("[WORK-004] [US-020] [US-021] [US-022] [US-023] [US-024] [US-056] account detail separates evidence predictions and precise external identity", async ({ fleetPage: page, trackedFleet }) => {
-  // A clean account has no fabricated history and receives a first-step estimate for each rule.
+  // A fresh account has three ordinary reasons sharing level one and two special reasons of unknown duration.
   await page.getByRole("button", { name: "Accounts", exact: true }).click();
   await page.getByRole("button", { name: trackedFleet.account.tag, exact: true }).click();
   await expect(page.getByRole("heading", { name: trackedFleet.account.tag, exact: true, level: 2 })).toBeVisible();
@@ -104,7 +104,8 @@ test("[WORK-004] [US-020] [US-021] [US-022] [US-023] [US-024] [US-056] account d
     // Every configured ladder has its own named estimate rather than one fleet-wide guess.
     await expect(predictions.getByRole("heading", { name: definition.name, exact: true })).toBeVisible();
   }
-  await expect(predictions.getByText(/Step 1 of/)).toHaveCount(5);
+  await expect(predictions.getByText("Shared competitive level 1", { exact: true })).toHaveCount(3);
+  await expect(predictions.getByText("Unknown", { exact: true })).toHaveCount(2);
   await expect(page.getByText(/No history on this account/)).toBeVisible();
   await expect(page.getByRole("link", { name: /Open on Steam/ })).toHaveAttribute("href", `https://steamcommunity.com/profiles/${trackedFleet.account.steam_id}`);
   // The profile is inspected as a link only; this suite never navigates to real external accounts.
@@ -119,7 +120,8 @@ test("[WORK-004] [US-020] [US-021] [US-022] [US-023] [US-024] [US-056] account d
   await expect(history.getByText(/Manual override/)).toBeVisible();
   await expect(history.getByText(/45m/)).toBeVisible();
   await expect(history.getByText(/2h/)).toBeVisible();
-  await expect(page.getByText(/Saved step 2 -> clean-time state 2/)).toBeVisible();
+  // Shared ordinary reasons can show the same transition on more than one reason card.
+  await expect(page.getByText(/Saved step 2 -> clean-time state 2/).first()).toBeVisible();
   // Persisted account detail is read back independently of the UI that submitted the mutation.
   const saved = await (await page.request.get(`/api/fleets/${trackedFleet.fleet.id}/accounts/${trackedFleet.account.id}/`)).json();
   expect(saved.events[0].id).toBe(event.id);
@@ -130,6 +132,11 @@ test("[WORK-004] [US-020] [US-021] [US-022] [US-023] [US-024] [US-056] account d
 test("[CAL-001] [US-007] [US-012] [US-013] [US-017] multiweek records and future step-downs stay distinct and focus exact accounts", async ({ fleetPage: page, trackedFleet }) => {
   // A seven-day assessment necessarily crosses a week boundary without multiplying saved events.
   const abandoning = trackedFleet.types.find((definition) => definition.name === "Abandoning")!;
+  // A custom four-step history has an exact terminal level, so all four forecast markers are meaningful.
+  const custom = await csrfRequest(page.request, `/api/fleets/${trackedFleet.fleet.id}/types/${abandoning.id}/`, "PATCH", {
+    name: abandoning.name, expected_policy_id: abandoning.policy.id, mechanism: "custom", steps: abandoning.policy.steps,
+  });
+  expect(custom.status()).toBe(200);
   await recordCooldown(page.request, trackedFleet.fleet.id, trackedFleet.account.id, abandoning.id, { forcedStep: 4 });
   await selectFleet(page, trackedFleet.fleet.id);
   await page.getByRole("button", { name: "Load next month", exact: true }).click();

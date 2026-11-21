@@ -27,6 +27,20 @@ describe("identity and combined filter semantics", () => {
     expect(filterEvents([expired, active, future], [account], { ...EMPTY_FILTERS, status: "clear" }, now)).toEqual([expired]);
     expect(filterEvents([active], [], EMPTY_FILTERS, now)).toEqual([]);
   });
+  it("retains the shared competitive marker when filtering by any ordinary reason", () => {
+    // The API emits one marker using the first eligible ordinary type as its representative.
+    const shared = { ...accountFixture().predictions[0], mechanism: "ordinary" as const };
+    // A custom reason remains outside the common ordinary history even on this account.
+    const account = accountFixture({ predictions: [
+      { ...shared, type_id: "A" }, { ...shared, type_id: "B" },
+      { ...shared, mechanism: "custom", type_id: "C" },
+    ] });
+    // All three filtered views read the same server snapshot; only qualifying ordinary reasons match.
+    const point = { account_id: account.id, account_tag: account.tag, type_id: "A", type_name: "Ordinary competitive", at: "2026-02-01T00:00:00Z", stored_step: 1, next_step: 2, total_minutes: 120 };
+    expect(filterForecasts([point], [account], { ...EMPTY_FILTERS, typeIds: ["B"] })).toEqual([point]);
+    expect(filterForecasts([point], [account], { ...EMPTY_FILTERS, typeIds: ["C"] })).toEqual([]);
+    expect(filterForecasts([{ ...point, type_id: "C" }], [account], { ...EMPTY_FILTERS, typeIds: ["A"] })).toEqual([]);
+  });
   it("keeps forecasts separate from observed status while applying exact account and type filters", () => {
     // Forecast state zero describes the ladder, not an observed zero-duration cooldown.
     const account = accountFixture(), point = { account_id: account.id, account_tag: account.tag, type_id: "A", type_name: "A", at: "2026-02-01T00:00:00Z", stored_step: 0, next_step: 1, total_minutes: 30 };

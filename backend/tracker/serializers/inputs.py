@@ -6,6 +6,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
 
+from tracker.models import PolicyVersion
+
 
 class WholeMinutesField(serializers.IntegerField):
     """Accept representable positive whole values without treating bool as one minute."""
@@ -98,20 +100,22 @@ class AccountUpdateSerializer(serializers.Serializer):
 
 
 class TypeInputSerializer(serializers.Serializer):
-    """Describe metadata and a nonempty ladder for one new stable offence identity."""
+    """Describe a reason and either its game mechanism or its custom duration ladder."""
 
     # Name uniqueness is enforced case-insensitively within the authorized fleet.
     name = serializers.CharField(max_length=100)
     # Short codes are optional labels; blank values derive from the saved name.
-    code = serializers.CharField(max_length=4, allow_blank=True, required=False, default="")
+    code = serializers.CharField(max_length=4, allow_blank=True, required=False)
     # The optional note explains what triggers the offence without changing its rule identity.
-    note = serializers.CharField(max_length=2000, allow_blank=True, required=False, default="")
+    note = serializers.CharField(max_length=2000, allow_blank=True, required=False)
     # steps are ordered whole-minute totals; clean_window_days is the elapsed-day interval and
     # decay_mode selects the explicit reduction strategy.
-    steps = serializers.ListField(child=WholeMinutesField(), min_length=1)
-    clean_window_days = WholeMinutesField(required=False, default=7)
+    steps = serializers.ListField(child=WholeMinutesField(), required=False)
+    # Game policies select their supported defaults centrally; missing fields preserve saved edits.
+    mechanism = serializers.ChoiceField(choices=PolicyVersion.Mechanism.values, required=False)
+    clean_window_days = WholeMinutesField(required=False)
     decay_mode = serializers.ChoiceField(
-        choices=["step_down", "full_reset", "none"], required=False, default="step_down"
+        choices=["step_down", "full_reset", "none"], required=False
     )
 
     def validate_code(self, code):
@@ -127,8 +131,9 @@ class TypeInputSerializer(serializers.Serializer):
         """Reject ladders whose complete forecast cannot fit the supported datetime range."""
         try:
             # A full remaining ladder must be forecastable without wrapping datetime arithmetic.
-            horizon = timedelta(minutes=max(attributes["steps"])) + timedelta(
-                days=attributes["clean_window_days"] * len(attributes["steps"])
+            steps = attributes.get("steps", [])
+            horizon = timedelta(minutes=max(steps, default=0)) + timedelta(
+                days=attributes.get("clean_window_days", 7) * len(steps)
             )
             timezone.now() + horizon
         except OverflowError as error:
@@ -142,6 +147,8 @@ class TypeInputSerializer(serializers.Serializer):
 class TypeUpdateSerializer(TypeInputSerializer):
     """An editor supplies the reviewed policy token before publishing or renaming."""
 
+    # Adopting a mechanism alone must preserve the reason name, code and trigger note.
+    name = serializers.CharField(max_length=100, required=False)
     # Stable policy identity detects stale editors even when only the label changes.
     expected_policy_id = serializers.UUIDField()
 
@@ -177,6 +184,8 @@ class EventInputSerializer(PreviewInputSerializer):
     observed_at = AwareDateTimeField()
     # Remaining minutes preserve the observed fact rather than a derived total duration.
     remaining_minutes = WholeMinutesField()
+    # The VACNet notice can attribute a restriction to the player or to a party member.
+    vac_attribution = serializers.ChoiceField(choices=["unknown", "self", "party"], required=False)
     # A nonempty reason is mandatory only when forced_step is actually supplied.
     override_reason = serializers.CharField(
         max_length=2000, allow_blank=True, required=False, default=""
@@ -216,3 +225,15 @@ class CalendarQuerySerializer(serializers.Serializer):
             # history.
             raise serializers.ValidationError("Choose a date range from one through 366 days.")
         return attributes
+
+
+class WarningInputSerializer(serializers.Serializer):
+    """Record a warning without requesting a predicted level or timer."""
+
+    # The notice UUID identifies a retry; the scoped IDs pin the account, reason and policy.
+    id = serializers.UUIDField()
+    account_id = serializers.UUIDField()
+    type_id = serializers.UUIDField()
+    policy_id = serializers.UUIDField()
+    # Warnings have no duration; their only game timestamp is when the operator saw the notice.
+    observed_at = AwareDateTimeField()

@@ -50,16 +50,18 @@ def test_clearing_a_short_code_derives_a_bounded_replacement(csrf_client, fleet)
     assert response.json()["code"] == "LEA"
 
 
-def test_new_policy_forecast_must_fit_retained_historical_states(csrf_client, fleet, account):
+def test_new_policy_forecast_must_fit_retained_historical_states(
+    csrf_client, fleet, account, custom_type
+):
     """A short new ladder still has to represent the older saved level's future decay."""
     # Four saved levels remain meaningful after shortening the active ladder.
-    report = event_request(csrf_client, fleet, account, forced_step=4)
+    report = event_request(csrf_client, fleet, account, forced_step=4, reason=custom_type["name"])
     assert (
         csrf_client.post(f"/api/fleets/{fleet['id']}/events/", report, format="json").status_code
         == 201
     )
     # One window fits datetime; four retained-state windows do not.
-    definition = active_type(csrf_client, fleet)
+    definition = custom_type
     response = csrf_client.patch(
         f"/api/fleets/{fleet['id']}/types/{definition['id']}/",
         {
@@ -71,7 +73,10 @@ def test_new_policy_forecast_must_fit_retained_historical_states(csrf_client, fl
         format="json",
     )
     assert response.status_code == 400
-    assert active_type(csrf_client, fleet)["policy"]["id"] == definition["policy"]["id"]
+    assert (
+        active_type(csrf_client, fleet, custom_type["name"])["policy"]["id"]
+        == definition["policy"]["id"]
+    )
 
 
 def test_concurrent_database_uniqueness_failure_is_a_safe_conflict(csrf_client):
@@ -113,12 +118,27 @@ def active_type(client, fleet, name="Abandoning"):
     return next(definition for definition in response.json() if definition["name"] == name)
 
 
-def event_request(client, fleet, account, *, forced_step=None, started_at=None):
+@pytest.fixture
+def custom_type(csrf_client, fleet):
+    """Create an independent policy to test legacy fleet-defined behavior through HTTP."""
+    # Matching ordinary durations lets these tests isolate how a custom policy treats history.
+    response = csrf_client.post(
+        f"/api/fleets/{fleet['id']}/types/",
+        {"name": "Local policy", "mechanism": "custom", "steps": [30, 120, 1440, 10080]},
+        format="json",
+    )
+    assert response.status_code == 201, response.data
+    return response.json()
+
+
+def event_request(
+    client, fleet, account, *, forced_step=None, started_at=None, reason="Abandoning"
+):
     """Build one report against an authoritative preview and explicit observation time."""
     # The fixture start is already in the past, avoiding timing-dependent future-time failures.
     started_at = started_at or timezone.now() - timedelta(minutes=10)
     # The selected type comes from this fleet's catalogue and retains its policy identity.
-    offence_type = active_type(client, fleet)
+    offence_type = active_type(client, fleet, reason)
     # The preview revision protects the report against concurrent account-history changes.
     preview_body = {
         "account_id": account["id"],
@@ -142,7 +162,7 @@ def event_request(client, fleet, account, *, forced_step=None, started_at=None):
         "policy_id": preview["policy_id"],
         "history_revision": preview["history_revision"],
         "observed_at": (started_at + timedelta(minutes=1)).isoformat(),
-        "remaining_minutes": min(20, preview["total_minutes"]),
+        "remaining_minutes": min(20, preview["total_minutes"] or 20),
         "override_reason": "Observed step in game" if forced_step else "",
     }
 
@@ -154,7 +174,7 @@ def test_anonymous_requests_cannot_list_fleets(api_client):
 
 @pytest.mark.parametrize("days_ago, expected_samples", [(31, 0), (25, 1), (10, 2), (0, 3)])
 def test_preview_counts_only_same_account_type_evidence_effective_at_its_time(
-    csrf_client, fleet, account, days_ago, expected_samples
+    csrf_client, fleet, account, custom_type, days_ago, expected_samples
 ):
     """A backdated report must not cite later history as support for its assessment."""
     # A shared reference instant keeps the saved chronology separate from request execution time.
@@ -162,7 +182,11 @@ def test_preview_counts_only_same_account_type_evidence_effective_at_its_time(
     for historical_days in (30, 20, 1):
         # Each accepted offence contributes one sample, regardless of its number of observations.
         command = event_request(
-            csrf_client, fleet, account, started_at=now - timedelta(days=historical_days)
+            csrf_client,
+            fleet,
+            account,
+            started_at=now - timedelta(days=historical_days),
+            reason=custom_type["name"],
         )
         assert (
             csrf_client.post(
@@ -170,7 +194,7 @@ def test_preview_counts_only_same_account_type_evidence_effective_at_its_time(
             ).status_code
             == 201
         )
-    # Another offence ladder must not inflate the current type's evidence count.
+    # An ordinary reason never inherits a fleet-defined custom escalation history.
     other_type = active_type(csrf_client, fleet, "Team Damage")
     other_preview = csrf_client.post(
         f"/api/fleets/{fleet['id']}/preview/",
@@ -179,8 +203,8 @@ def test_preview_counts_only_same_account_type_evidence_effective_at_its_time(
     )
     assert other_preview.status_code == 200
     assert other_preview.json()["sample_count"] == 0
-    # The selected assessment time, rather than today's summary, bounds explanatory samples.
-    definition = active_type(csrf_client, fleet)
+    # The selected assessment time bounds the independent custom samples.
+    definition = custom_type
     response = csrf_client.post(
         f"/api/fleets/{fleet['id']}/preview/",
         {
@@ -198,14 +222,17 @@ def test_fleet_starts_without_demo_accounts_and_with_editable_rules(csrf_client,
     """Only documented ladder defaults are seeded; no fabricated real account evidence is stored."""
     assert fleet["role"] == "owner"
     assert csrf_client.get(f"/api/fleets/{fleet['id']}/accounts/").json() == []
-    # Catalogue values demonstrate model assumptions, not a claim of official game-rule accuracy.
+    # New fleets use published ordinary durations and observation-only special mechanisms.
     rules = csrf_client.get(f"/api/fleets/{fleet['id']}/types/").json()
     assert len(rules) == 5
-    assert next(rule for rule in rules if rule["name"] == "VACLive")["policy"]["steps"] == [
-        1200,
-        10080,
-        43200,
-    ]
+    for rule in rules:
+        # VACNet and grief-report notices lack a verified exact duration ladder.
+        mechanism = rule["policy"]["mechanism"]
+        if rule["name"] in {"VACLive", "GriefReports"}:
+            assert mechanism == {"VACLive": "vacnet", "GriefReports": "griefing"}[rule["name"]]
+            assert rule["policy"]["steps"] == []
+        else:
+            assert mechanism == "ordinary" and rule["policy"]["steps"] == [30, 120, 1440, 10080]
 
 
 def test_exact_steam_id_and_casefolded_rule_identity(csrf_client, fleet, account):
@@ -345,10 +372,12 @@ def test_changed_retry_payload_and_stale_preview_conflict(csrf_client, fleet, ac
 
 
 @pytest.mark.parametrize("remaining", [0, -1, 0.5, "NaN", 31])
-def test_invalid_remaining_values_do_not_create_evidence(csrf_client, fleet, account, remaining):
+def test_invalid_remaining_values_do_not_create_evidence(
+    csrf_client, fleet, account, custom_type, remaining
+):
     """Reject clamped, rounded or over-total evidence before recording."""
-    # An untouched first-offence Abandoning ladder has a thirty-minute total.
-    report = event_request(csrf_client, fleet, account)
+    # A fleet-defined policy can still bound evidence by its configured first step.
+    report = event_request(csrf_client, fleet, account, reason=custom_type["name"])
     report["remaining_minutes"] = remaining
     assert (
         csrf_client.post(f"/api/fleets/{fleet['id']}/events/", report, format="json").status_code
@@ -623,6 +652,32 @@ def test_calendar_expired_history_and_bad_ranges_are_explicit(csrf_client, fleet
     assert csrf_client.get(endpoint, {"type_id": str(uuid4())}).status_code == 404
 
 
+def test_policy_only_patch_preserves_operator_metadata(csrf_client, fleet):
+    """Operators can adopt game rules without resending labels from the last catalogue read."""
+    # Custom metadata deliberately differs from what the service would derive for a blank label.
+    endpoint = f"/api/fleets/{fleet['id']}/types/"
+    custom = csrf_client.post(
+        endpoint,
+        {
+            "name": "Vote removal",
+            "code": "KICK",
+            "note": "Issued after repeated votes",
+            "steps": [25],
+        },
+        format="json",
+    ).json()
+    # The new revision keeps the historical type identity, name, short code and description.
+    response = csrf_client.patch(
+        f"{endpoint}{custom['id']}/",
+        {"expected_policy_id": custom["policy"]["id"], "mechanism": "ordinary"},
+        format="json",
+    )
+    assert response.status_code == 200, response.data
+    adopted = response.json()
+    assert adopted["policy"]["mechanism"] == "ordinary"
+    assert all(adopted[field] == custom[field] for field in ("id", "name", "code", "note"))
+
+
 def test_metadata_only_edit_reuses_policy_and_stale_type_changes_conflict(csrf_client, fleet):
     """Labels can change without publishing duplicate policies or overriding another editor."""
     # The full editor payload deliberately leaves all policy inputs identical.
@@ -781,3 +836,73 @@ def test_reusing_an_observation_id_for_a_new_event_conflicts(csrf_client, fleet,
         ]
         == 1
     )
+
+
+def test_vacnet_long_timer_and_party_reason_round_trip_through_fleet_views(
+    csrf_client, fleet, account
+):
+    """A long observed timer drives availability even when the original duration is unknown."""
+    # A 90-day observation and explicit party notice must survive every API projection.
+    command = event_request(csrf_client, fleet, account, reason="VACLive")
+    command.update(remaining_minutes=90 * 1440, vac_attribution="party")
+    events_url = f"/api/fleets/{fleet['id']}/events/"
+    recorded = csrf_client.post(events_url, command, format="json")
+    assert recorded.status_code == 201, recorded.data
+    event = recorded.json()
+    assert event["vac_attribution"] == "party" and event["mechanism"] == "vacnet"
+    assert event["assigned_step"] is event["total_minutes"] is event["predicted_expires_at"] is None
+    assert event["expires_at"] == event["observed_expires_at"]
+    # A changed attribution is different evidence even when the retry identities are unchanged.
+    assert (
+        csrf_client.post(
+            events_url, {**command, "vac_attribution": "self"}, format="json"
+        ).status_code
+        == 409
+    )
+    detail = csrf_client.get(f"/api/fleets/{fleet['id']}/accounts/{account['id']}/").json()
+    assert detail["active_until"] == event["observed_expires_at"] and detail["status"] == "active"
+    prediction = next(row for row in detail["predictions"] if row["type_name"] == "VACLive")
+    assert prediction["step"] is prediction["total_minutes"] is prediction["next_decay_at"] is None
+    assert detail["events"][0]["observations"][0]["remaining_minutes"] == 90 * 1440
+    # The calendar must include a special restriction beyond the old 30-day fleet maximum.
+    visible = timezone.now().date() + timedelta(days=60)
+    calendar = csrf_client.get(
+        f"/api/fleets/{fleet['id']}/calendar/",
+        {
+            "start": visible.isoformat(),
+            "end": (visible + timedelta(days=1)).isoformat(),
+        },
+    ).json()
+    assert [row["id"] for row in calendar["events"]] == [event["id"]]
+    assert calendar["forecasts"] == []
+
+
+def test_shared_unbounded_ordinary_state_survives_mixed_reason_writes(csrf_client, fleet, account):
+    """Five successive ordinary restrictions share one progression and retain the fifth level."""
+    # Space starts by one hour after every timer expiry so the clean-week rule never decays.
+    start = timezone.now() - timedelta(days=40)
+    expected_minutes = [30, 120, 1440, 10080, 10080]
+    reasons = ["Abandoning", "Kicking", "Team Damage", "Abandoning", "Kicking"]
+    for index, (reason, duration) in enumerate(zip(reasons, expected_minutes, strict=True), 1):
+        # Snapshot and timer agree at each event; only the reason changes across ordinary writes.
+        command = event_request(csrf_client, fleet, account, reason=reason, started_at=start)
+        command["remaining_minutes"] = duration - 1
+        response = csrf_client.post(f"/api/fleets/{fleet['id']}/events/", command, format="json")
+        assert response.status_code == 201, response.data
+        assert (
+            response.json()["assigned_step"] == index
+            and response.json()["total_minutes"] == duration
+        )
+        start += timedelta(minutes=duration, hours=1)
+    # Two full clean weeks leave level three before the next offence advances it to level four.
+    preview = csrf_client.post(
+        f"/api/fleets/{fleet['id']}/preview/",
+        {
+            "type_id": active_type(csrf_client, fleet, "Team Damage")["id"],
+            "account_id": account["id"],
+            "started_at": (start + timedelta(weeks=2) - timedelta(hours=1)).isoformat(),
+        },
+        format="json",
+    ).json()
+    assert preview["sample_count"] == 5 and preview["base_step"] == 3
+    assert preview["step"] == 4 and preview["total_minutes"] == 10080

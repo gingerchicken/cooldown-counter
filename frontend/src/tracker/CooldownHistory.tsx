@@ -1,3 +1,8 @@
+import {
+  exceedsOrdinaryDuration,
+  isMinimumDuration,
+  ordinaryTimerDiscrepancy,
+} from "./mechanisms";
 import type { CooldownEvent } from "./types";
 import { formatDuration, formatTimestamp, severity } from "./format";
 
@@ -56,11 +61,34 @@ export function CooldownHistory({
                         {formatTimestamp(event.started_at)}
                       </time>
                       <span className="small muted">
-                        Ends {formatTimestamp(event.expires_at)}
+                        {event.observed_expires_at ? "Timer expiry" : "Ends"}{" "}
+                        {formatTimestamp(event.expires_at)}
                       </span>
+                      {event.observed_expires_at &&
+                        event.predicted_expires_at && (
+                          <span className="small muted">
+                            {isMinimumDuration(
+                              event.level_is_lower_bound,
+                              event.total_minutes,
+                            )
+                              ? "Earliest predicted expiry"
+                              : "Predicted expiry"}{" "}
+                            {formatTimestamp(event.predicted_expires_at)}
+                          </span>
+                        )}
                     </td>
                     <td>
                       {event.type_name}
+                      {event.mechanism === "vacnet" && (
+                        <span className="small muted">
+                          Flagged:{" "}
+                          {event.vac_attribution === "party"
+                            ? "party member"
+                            : event.vac_attribution === "self"
+                              ? "this account"
+                              : "unknown"}
+                        </span>
+                      )}
                       <span className="small muted">
                         Policy v{event.policy_number}
                       </span>
@@ -84,8 +112,24 @@ export function CooldownHistory({
                           );
                         })}
                       </ul>
+                      {event.mechanism === "ordinary" &&
+                        event.observations.some(
+                          // Keep the discrepancy visible even when a later reading is shorter.
+                          (reading) =>
+                            exceedsOrdinaryDuration(
+                              event.started_at,
+                              reading.observed_at,
+                              reading.remaining_minutes,
+                            ),
+                        ) && (
+                          <p className="warning">{ordinaryTimerDiscrepancy}</p>
+                        )}
                     </td>
                     <td className={`mono ${severity(event.total_minutes)}`}>
+                      {isMinimumDuration(
+                        event.level_is_lower_bound,
+                        event.total_minutes,
+                      ) && "At least "}
                       {formatDuration(event.total_minutes)}
                     </td>
                     <td>

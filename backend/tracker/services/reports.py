@@ -3,35 +3,108 @@
 from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from tracker.models import CooldownEvent, Observation, OffenceType, SteamAccount
-from tracker.prediction import HistoryEntry, PolicySpec, predict
+from tracker.prediction import ORDINARY_DURATIONS, HistoryEntry, predict
 
 from .access import Conflict, audit, save_validated
-from .catalogue import current_policy
+from .catalogue import current_policy, policy_spec
 
 
-def policy_spec(policy):
-    """Translate one immutable ORM version into the independently tested pure model."""
-    # Step order belongs to published ordinals, never to magnitude or client display sorting.
-    return PolicySpec(
-        tuple(step.duration_minutes for step in policy.steps.all()),
-        policy.clean_window_days,
-        policy.decay_mode,
+def history_key(policy):
+    """Return the progression identity within a single Steam account and fleet."""
+    # Ordinary reasons share probation. An opt-in to a new mechanism starts a distinct history.
+    return (
+        "ordinary" if policy.mechanism == "ordinary" else (policy.mechanism, policy.offence_type_id)
     )
 
 
-def history_entries(account, offence_type_id):
-    """Read only saved same-account/type assessment facts, including archived versions."""
-    # A stable type ID joins versions without mutating or regrouping records by display name.
-    return [
-        HistoryEntry(event.started_at, event.expires_at, event.assigned_step, str(event.id))
-        for event in account.events.filter(policy__offence_type_id=offence_type_id).order_by(
-            "started_at", "id"
+def history_entry(event, readings=None):
+    """Return the level supported by the saved prediction and available timer observations.
+
+    Current projections supply prefetched events. A backdated preview passes only readings
+    visible by its assessment time, so a later observation cannot change its input history.
+    """
+    if event.assigned_step is None:
+        # Observation-only notices never advance a numeric ladder.
+        return None
+    # Saved assessments remain authoritative for a custom rule. A game notice can add evidence.
+    expiry = event.expires_at
+    level = event.assigned_step
+    lower_bound = event.level_is_lower_bound
+    if event.policy.mechanism == "ordinary":
+        # Stable chronological ordering makes the last eligible reading the current expiry estimate.
+        observations = list(event.observations.all() if readings is None else readings)
+        if observations:
+            latest = observations[-1]
+            expiry = _observed_expiry(latest.observed_at, latest.remaining_minutes)
+            # A timer seen after issue also proves the restriction lasted through the intervening
+            # whole minutes. Discard fractional elapsed minutes to respect the input precision.
+            whole_minute = timedelta(minutes=1)
+            observed_total = max(
+                (reading.observed_at - event.started_at) // whole_minute + reading.remaining_minutes
+                for reading in observations
+            )
+            if observed_total > event.total_minutes:
+                # A later, shorter reading cannot erase a previous sighting's minimum level.
+                level = max(
+                    level,
+                    1 + sum(observed_total > minutes for minutes in ORDINARY_DURATIONS[:-1]),
+                )
+                lower_bound = True
+    return HistoryEntry(event.started_at, expiry, level, str(event.id), lower_bound)
+
+
+def observation_only_explanation(policy):
+    """Describe what is known without assigning an invented stage or recovery schedule."""
+    if policy.mechanism == "vacnet":
+        # Valve publishes a repeat maximum, but its FAQ gives inconsistent minimum durations.
+        return "VACNet restrictions can reach 180 days. Record the timer shown in game."
+    # The current public grief-report guidance supplies no reliable sequence of durations.
+    return "Grief-report duration and recovery are unknown. Record the timer shown in game."
+
+
+def _preview_history(account, policy, at):
+    """Read only history effective at the draft start, within the selected progression."""
+    # Ordinary reasons share a level across types; other mechanisms stay with their type.
+    events = account.events.filter(policy__mechanism=policy.mechanism, started_at__lte=at)
+    if policy.mechanism != "ordinary":
+        events = events.filter(policy__offence_type_id=policy.offence_type_id)
+    return events
+
+
+def _observed_expiry(observed_at, remaining_minutes):
+    """Convert a timer reading into an expiry estimate, rejecting calendar overflow."""
+    # Both inputs describe the same sighting even when the operator submits it much later.
+    try:
+        return observed_at + timedelta(minutes=remaining_minutes)
+    except OverflowError as error:
+        raise ValidationError(
+            {"remaining_minutes": "Timer exceeds the supported timestamp range."}
+        ) from error
+
+
+def _history_at(events, policy, at):
+    """Recover the expiry known at a historical assessment without leaking later readings."""
+    if policy.mechanism == "ordinary":
+        # Fetch eligible readings in one ordered query with a stable chronological tie-break.
+        events = events.prefetch_related(
+            Prefetch(
+                "observations",
+                queryset=Observation.objects.filter(observed_at__lte=at).order_by(
+                    "observed_at", "id"
+                ),
+                to_attr="eligible_readings",
+            )
         )
+    # Joining the policy avoids a query per event while determining which readings affect its state.
+    return [
+        history_entry(event, getattr(event, "eligible_readings", None))
+        for event in events.select_related("policy")
     ]
 
 
@@ -58,8 +131,25 @@ def preview_report(fleet, attributes):
     validate_report_time(attributes["started_at"])
     # Current policy identity and history revision form an optimistic review boundary.
     policy = current_policy(offence_type)
-    # Reuse the same scoped history for calculation and its event-time evidence count.
-    entries = history_entries(account, offence_type.id)
+    # Select only the rows supporting this assessment, including other qualifying ordinary reasons.
+    events = _preview_history(account, policy, attributes["started_at"])
+    if policy.mechanism in {"vacnet", "griefing"}:
+        # No exact public ladder exists. The subsequent report requires an actual timer reading.
+        if attributes.get("forced_step") is not None:
+            raise ValidationError({"forced_step": "This mechanism has no published steps."})
+        return {
+            "policy_id": policy.id,
+            "history_revision": account.history_revision,
+            "step": None,
+            "total_minutes": None,
+            "expires_at": None,
+            "base_step": None,
+            "level_is_lower_bound": False,
+            "sample_count": events.count(),
+            "transition": observation_only_explanation(policy),
+        }
+    # Select eligible readings separately from receipt time when a draft is backdated.
+    entries = _history_at(events, policy, attributes["started_at"])
     try:
         # The pure engine excludes events later than the entered assessment time.
         assessment = predict(
@@ -80,9 +170,10 @@ def preview_report(fleet, attributes):
         "total_minutes": assessment.total_minutes,
         "expires_at": expires_at,
         "base_step": assessment.base_step,
+        "level_is_lower_bound": assessment.level_is_lower_bound,
         "transition": assessment.transition,
         # Later recorded offences cannot support an assessment made for an earlier instant.
-        "sample_count": sum(entry.started_at <= attributes["started_at"] for entry in entries),
+        "sample_count": len(entries),
     }
 
 
@@ -96,6 +187,7 @@ def _same_event_request(event, attributes):
         and event.policy_id == attributes["policy_id"]
         and event.policy.offence_type_id == attributes["type_id"]
         and event.started_at == attributes["started_at"]
+        and event.vac_attribution == attributes.get("vac_attribution", "unknown")
         and event.is_override == (attributes.get("forced_step") is not None)
         and (not event.is_override or event.assigned_step == attributes["forced_step"])
         and event.override_reason == attributes.get("override_reason", "")
@@ -157,6 +249,14 @@ def record_event(fleet, actor, attributes):
             assigned_step=preview["step"],
             total_minutes=preview["total_minutes"],
             expires_at=preview["expires_at"],
+            level_is_lower_bound=preview["level_is_lower_bound"],
+            # Game timers provide independent evidence. Custom rules retain their model expiry.
+            observed_expires_at=(
+                _observed_expiry(attributes["observed_at"], attributes["remaining_minutes"])
+                if policy.mechanism != "custom"
+                else None
+            ),
+            vac_attribution=attributes.get("vac_attribution", "unknown"),
             is_override=attributes.get("forced_step") is not None,
             override_reason=attributes.get("override_reason", ""),
             transition=preview["transition"],
@@ -209,6 +309,16 @@ def record_observation(fleet, actor, event_id, attributes):
     validate_report_time(event.started_at, attributes["observed_at"])
     # The observation model validates against the saved assessment, not the current ladder.
     observation = save_validated(Observation(event=event, created_by=actor, **attributes))
+    if event.policy.mechanism != "custom":
+        # An older sighting remains in the audit history but cannot supersede newer timer evidence.
+        observed_expiry = _observed_expiry(observation.observed_at, observation.remaining_minutes)
+        latest_id = (
+            event.observations.order_by("-observed_at", "-id").values_list("id", flat=True).first()
+        )
+        if latest_id == observation.id:
+            # The account lock serializes this cache with every observation on the same event.
+            event.observed_expires_at = observed_expiry
+            event.save(update_fields=["observed_expires_at"])
     account.history_revision += 1
     account.save(update_fields=["history_revision"])
     audit(fleet, actor, "observation.recorded", observation.id, {"event_id": event.id})

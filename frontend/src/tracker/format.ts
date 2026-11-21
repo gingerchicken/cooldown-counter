@@ -1,7 +1,7 @@
 /** Format numeric minutes as exact display components without implementing Python's prediction rules. */
-export function formatDuration(minutes: number): string {
+export function formatDuration(minutes: number | null): string {
   // Persisted totals are positive integers; unknown transport values must not become fabricated time.
-  if (!Number.isFinite(minutes) || minutes < 0) return "Unknown";
+  if (minutes === null || !Number.isFinite(minutes) || minutes < 0) return "Unknown";
   // whole is the truncated minute count; days/hours are complete units and remainder the final
   // minutes. Components avoid rounding displayed evidence into an invalid 1h 60m representation.
   const whole = Math.floor(minutes),
@@ -18,7 +18,9 @@ export function formatDuration(minutes: number): string {
 }
 
 /** Map numeric minutes to the reference's shared appearance bucket, without claiming game policy. */
-export function severity(minutes: number): string {
+export function severity(minutes: number | null): string {
+  // An unknown prediction has no duration bucket or implied severity.
+  if (minutes === null) return "muted";
   // These buckets match the supplied reference while all text remains available without color.
   return `severity-${minutes <= 60 ? 1 : minutes <= 360 ? 2 : minutes <= 1440 ? 3 : minutes <= 10080 ? 4 : 5}`;
 }

@@ -10,7 +10,7 @@ from django.test.utils import CaptureQueriesContext
 
 from tracker.models import CooldownEvent, Observation
 from tracker.queries import accounts_projection, calendar_projection
-from tracker.services.catalogue import create_account, current_policy, update_type
+from tracker.services.catalogue import create_account, create_type, current_policy, update_type
 from tracker.services.fleets import create_fleet
 
 # Real persisted rows exercise relationship loading and query budgets, not a mocked ORM shape.
@@ -56,7 +56,10 @@ def query_workspace(user):
     beta = create_account(fleet, user, {"steam_id": "76561198039452204", "tag": "Beta"})
     # The histories deliberately use different duration ladders and preserved policy versions.
     abandoning = fleet.offence_types.get(name="Abandoning")
-    grief = fleet.offence_types.get(name="GriefReports")
+    # A legacy fleet can still use its own independent griefing estimates across custom revisions.
+    grief = create_type(
+        fleet, user, {"name": "Legacy grief estimate", "steps": [120, 1440, 10080, 43200]}
+    )
     abandoning_policy = current_policy(abandoning)
     grief_policy = current_policy(grief)
     # A later short event must not start clean time before an earlier overlapping long event ends.
@@ -171,6 +174,17 @@ def test_calendar_grouping_keeps_forecasts_scoped_and_saved_expiry_anchored(quer
     assert calendar["recorded_count"] == 5
     assert len(calendar["events"]) == 5
     assert all(event["account_id"] != foreign_account.id for event in calendar["events"])
+    # Three ordinary reasons share one set of markers for each account, including filtered views.
+    ordinary = [
+        point for point in calendar["forecasts"] if point["type_name"] == "Ordinary competitive"
+    ]
+    assert ordinary
+    assert len({(point["account_id"], point["at"]) for point in ordinary}) == len(ordinary)
+    kicking = fixture["fleet"].offence_types.get(name="Kicking")
+    with patch("tracker.queries.timezone.now", return_value=fixture["now"]):
+        filtered = calendar_projection(fixture["fleet"], {**filters, "type_id": kicking.id})
+    assert {point["at"] for point in filtered["forecasts"]} == {point["at"] for point in ordinary}
+    assert not filtered["events"]
     # A retained stored level one reaches zero seven days after the longest outstanding expiry.
     grief_markers = [
         marker for marker in calendar["forecasts"] if marker["type_id"] == fixture["grief"].id

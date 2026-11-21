@@ -319,7 +319,7 @@ export function FleetWorkspace({
               {view === "calendar"
                 ? "Every account, by day. Solid bars are recorded cooldowns; dashed marks are modelled step-downs."
                 : view === "accounts"
-                  ? "Exact Steam identities, current availability and independent ladder histories."
+                  ? "Exact Steam identities, current availability and recorded cooldowns."
                   : view === "types"
                     ? "Maintain modelled ladders while preserving historical assessments."
                     : "Private fleet records with explicit membership and preserved evidence."}
@@ -504,6 +504,11 @@ export function FleetWorkspace({
               onDismiss={() => {
                 // Discard the local editor after cancellation or acceptance rather than retain a stale draft.
                 setModal(null);
+              }}
+              onWarningSaved={(accountId) => {
+                // A warning appears in account detail without moving the calendar or adding a restriction.
+                changed("Griefing warning saved.");
+                openAccount(accountId);
               }}
               onSaved={(event) => {
                 // Refresh accepted projections before opening the account named by the saved event.

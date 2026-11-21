@@ -101,9 +101,17 @@ export function filterForecasts(
     // forecast is a modeled reduction; account is its metadata or undefined when not available.
     // The caller keeps predictions visually and numerically distinct from recorded cooldowns.
     const account = accountById.get(forecast.account_id);
+    if (!account || !matchesAccount(account, filters)) return false;
+    // A direct reason match also covers independent custom ladders.
+    if (!filters.typeIds.length || filters.typeIds.includes(forecast.type_id))
+      return true;
+    // All ordinary reasons share this account's marker. Other mechanisms still require their own exact ID.
+    const ordinaryReasons = account.predictions.filter(
+      (prediction) => prediction.mechanism === "ordinary",
+    );
     return (
-      Boolean(account && matchesAccount(account, filters)) &&
-      (!filters.typeIds.length || filters.typeIds.includes(forecast.type_id))
+      ordinaryReasons.some((reason) => reason.type_id === forecast.type_id) &&
+      ordinaryReasons.some((reason) => filters.typeIds.includes(reason.type_id))
     );
   });
 }

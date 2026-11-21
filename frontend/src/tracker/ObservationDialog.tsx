@@ -1,3 +1,4 @@
+import { isMinimumDuration } from "./mechanisms";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Modal } from "./Modal";
@@ -60,10 +61,17 @@ export function ObservationDialog({
       );
       return;
     }
-    if (minutes === null || minutes > event.total_minutes) {
-      // Remaining evidence must fit the immutable assessed total, even if the current rule has changed.
+    if (
+      minutes === null ||
+      (event.mechanism === "custom" &&
+        event.total_minutes !== null &&
+        minutes > event.total_minutes)
+    ) {
+      // The pinned custom policy retains its total constraint. Game notices may contradict a model prediction.
       setError(
-        `Enter positive whole minutes no greater than ${event.total_minutes}.`,
+        event.mechanism === "custom"
+          ? `Enter positive whole minutes no greater than ${event.total_minutes}.`
+          : "Enter positive whole minutes from the displayed timer.",
       );
       return;
     }
@@ -95,9 +103,10 @@ export function ObservationDialog({
         }}
       >
         <p>
-          {event.account_tag} · {event.type_name} · saved total{" "}
-          {formatDuration(event.total_minutes)}. This adds evidence to the same
-          cooldown.
+          {event.account_tag} · {event.type_name}. This adds evidence to the
+          same cooldown.
+          {event.total_minutes !== null &&
+            ` Saved total: ${isMinimumDuration(event.level_is_lower_bound, event.total_minutes) ? "at least " : ""}${formatDuration(event.total_minutes)}.`}
         </p>
         <label>
           Observed at (UTC)

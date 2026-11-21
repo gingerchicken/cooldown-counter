@@ -2,6 +2,8 @@
 
 from rest_framework import serializers
 
+from tracker.models import PolicyVersion
+
 
 class FleetSerializer(serializers.Serializer):
     """A tenant summary includes the current caller's effective role."""
@@ -26,6 +28,8 @@ class MembershipSerializer(serializers.Serializer):
 class PolicySerializer(serializers.Serializer):
     """An immutable rule version and ordered whole-minute ladder."""
 
+    # The pinned mechanism distinguishes shared game rules from independent fleet policies.
+    mechanism = serializers.ChoiceField(choices=PolicyVersion.Mechanism.values)
     # id/number identify the revision; mode/window define decay; steps are ordered minutes.
     id = serializers.UUIDField()
     number = serializers.IntegerField()
@@ -51,18 +55,22 @@ class OffenceTypeSerializer(serializers.Serializer):
 class PredictionSerializer(serializers.Serializer):
     """A server-derived next-offence estimate, distinct from a saved observation."""
 
+    # An imported seven-day restriction can establish a minimum level without an exact rank.
+    level_is_lower_bound = serializers.BooleanField()
+    # The pinned mechanism distinguishes shared game rules from independent fleet policies.
+    mechanism = serializers.ChoiceField(choices=PolicyVersion.Mechanism.values)
     # Stable type identity accompanies the current human label to support exact filtering.
     type_id = serializers.UUIDField()
     type_name = serializers.CharField()
     # step is the next level, total_steps the ladder size, total_minutes its penalty and base_step
     # the decayed stored state before another offence advances it.
-    step = serializers.IntegerField()
+    step = serializers.IntegerField(allow_null=True)
     total_steps = serializers.IntegerField()
-    total_minutes = serializers.IntegerField()
-    base_step = serializers.IntegerField()
+    total_minutes = serializers.IntegerField(allow_null=True)
+    base_step = serializers.IntegerField(allow_null=True)
     # Historical support and last recorded state are distinct from the decayed current base.
     sample_count = serializers.IntegerField()
-    recorded_step = serializers.IntegerField()
+    recorded_step = serializers.IntegerField(allow_null=True)
     # next_decay_at is nullable when no reduction remains; transition explains the model's result.
     next_decay_at = serializers.DateTimeField(allow_null=True)
     transition = serializers.CharField()
@@ -83,6 +91,10 @@ class ObservationSerializer(serializers.Serializer):
 class EventSerializer(serializers.Serializer):
     """An immutable offence assessment and every observation attached to that event."""
 
+    # An imported seven-day restriction can establish a minimum level without an exact rank.
+    level_is_lower_bound = serializers.BooleanField()
+    # The pinned mechanism distinguishes shared game rules from independent fleet policies.
+    mechanism = serializers.ChoiceField(choices=PolicyVersion.Mechanism.values)
     # id identifies the offence; account_id/account_tag and type_id/type_name pair stable keys
     # with display labels so calendar and detail share one typed representation.
     id = serializers.UUIDField()
@@ -95,9 +107,14 @@ class EventSerializer(serializers.Serializer):
     policy_number = serializers.IntegerField()
     started_at = serializers.DateTimeField()
     expires_at = serializers.DateTimeField()
+    # Keep the original prediction apart from the latest expiry estimated from a game timer.
+    predicted_expires_at = serializers.DateTimeField(allow_null=True)
+    observed_expires_at = serializers.DateTimeField(allow_null=True)
+    # Self and queued-party VACNet notices have different attribution.
+    vac_attribution = serializers.ChoiceField(choices=["unknown", "self", "party"])
     # assigned_step/total_minutes preserve the original level and total, not a new replay result.
-    assigned_step = serializers.IntegerField()
-    total_minutes = serializers.IntegerField()
+    assigned_step = serializers.IntegerField(allow_null=True)
+    total_minutes = serializers.IntegerField(allow_null=True)
     # is_override/reason preserve intervention; transition records the accepted explanation.
     is_override = serializers.BooleanField()
     override_reason = serializers.CharField()
@@ -109,7 +126,7 @@ class EventSerializer(serializers.Serializer):
 
 
 class AccountSerializer(serializers.Serializer):
-    """A fleet row with exact identity, availability and all independent predictions."""
+    """A fleet row with exact identity, availability and all current predictions."""
 
     # id is scoped identity; steam_id retains exact digits; tag is the mutable operator label.
     id = serializers.UUIDField()
@@ -123,12 +140,22 @@ class AccountSerializer(serializers.Serializer):
     # Per-type evidence sets permit correct list filtering without fetching every account detail.
     recorded_type_ids = serializers.ListField(child=serializers.UUIDField())
     active_type_ids = serializers.ListField(child=serializers.UUIDField())
-    # status summarizes availability; predictions contain independent next results for each type.
+    # status summarizes availability; predictions contain conditional next results for each type.
     status = serializers.ChoiceField(choices=["active", "clear", "clean"])
     predictions = PredictionSerializer(many=True)
     # active_until is latest outstanding expiry; first_observed is earliest recorded event start.
     active_until = serializers.DateTimeField(allow_null=True)
     first_observed = serializers.DateTimeField(allow_null=True)
+
+
+class WarningSerializer(serializers.Serializer):
+    """An attributed warning kept outside the account's issued cooldown history."""
+
+    # Stable identity supports retries; the label and actor describe the notice to the operator.
+    id = serializers.UUIDField()
+    type_name = serializers.CharField(source="policy.offence_type.name")
+    observed_at = serializers.DateTimeField()
+    created_by = serializers.CharField(source="created_by.username")
 
 
 class AccountDetailSerializer(AccountSerializer):
@@ -137,22 +164,26 @@ class AccountDetailSerializer(AccountSerializer):
     # Events have distinct observation lists rather than one row per report pretending to be an
     # offence.
     events = EventSerializer(many=True)
+    # Warnings carry no restriction and are displayed separately from the event count.
+    warnings = WarningSerializer(many=True)
 
 
 class PreviewSerializer(serializers.Serializer):
     """An assessment and its reviewed policy/history concurrency tokens."""
 
+    # An imported seven-day restriction can establish a minimum level without an exact rank.
+    level_is_lower_bound = serializers.BooleanField()
     # policy_id/history_revision are concurrency tokens, not client authority to choose a total.
     policy_id = serializers.UUIDField()
     history_revision = serializers.IntegerField()
     # step/total_minutes/expires_at describe the assessment; base_step is its prior decayed state
     # and transition explains how that state produced the next offence level.
-    step = serializers.IntegerField()
-    total_minutes = serializers.IntegerField()
-    expires_at = serializers.DateTimeField()
-    base_step = serializers.IntegerField()
+    step = serializers.IntegerField(allow_null=True)
+    total_minutes = serializers.IntegerField(allow_null=True)
+    expires_at = serializers.DateTimeField(allow_null=True)
+    base_step = serializers.IntegerField(allow_null=True)
     transition = serializers.CharField()
-    # Only same-account/type events effective by the entered start support this assessment.
+    # Only events in the same progression effective by the entered start support this assessment.
     sample_count = serializers.IntegerField()
 
 

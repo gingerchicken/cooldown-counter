@@ -9,17 +9,17 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from tracker.models import CooldownEvent, LadderStep, OffenceType, PolicyVersion, SteamAccount
-from tracker.prediction import PolicySpec
+from tracker.prediction import ORDINARY_DURATIONS, PolicySpec
 
 from .access import Conflict, audit, save_validated
 
-# Defaults are editable modeling inputs, not verified current Valve policy or fabricated histories.
+# Stable mechanisms describe how to interpret a notice; editable reason labels never select rules.
 DEFAULT_TYPES = (
-    ("VACLive", "VAC", "Live VAC detection in match", (1200, 10080, 43200)),
-    ("Abandoning", "ABD", "Left before the match ended", (30, 120, 1440, 10080)),
-    ("Team Damage", "TDM", "Damage threshold to teammates", (30, 120, 1440, 10080)),
-    ("Kicking", "KCK", "Kicked by team vote", (30, 120, 1440, 10080)),
-    ("GriefReports", "GRF", "Accumulated in-game reports", (120, 1440, 10080, 43200)),
+    ("VACLive", "VAC", "VACNet restriction issued to the player or their party", "vacnet"),
+    ("Abandoning", "ABD", "Issued cooldown for abandoning or failing to reconnect", "ordinary"),
+    ("Team Damage", "TDM", "Issued cooldown for excessive team damage", "ordinary"),
+    ("Kicking", "KCK", "Issued cooldown for repeated removal or kick vote abuse", "ordinary"),
+    ("GriefReports", "GRF", "Issued cooldown for excessive griefing reports", "griefing"),
 )
 
 
@@ -29,14 +29,47 @@ def current_policy(offence_type):
     return offence_type.versions.order_by("-number").prefetch_related("steps").first()
 
 
-def publish_policy(offence_type, actor, steps, clean_window_days=7, decay_mode="step_down"):
-    """Append one policy and its contiguous steps; the caller must lock an existing type."""
+def policy_spec(policy):
+    """Translate an immutable ORM policy revision into its validated prediction inputs."""
+    # Duration order comes from the published ordinals and is retained across queries and edits.
+    return PolicySpec(
+        tuple(step.duration_minutes for step in policy.steps.all()),
+        policy.clean_window_days,
+        policy.decay_mode,
+        policy.mechanism,
+    )
+
+
+def _requested_policy(attributes, current=None):
+    """Resolve partial edits, permitting fleet choices without redefining a CS2 mechanism."""
+    # Unspecified fields inherit the existing snapshot for partial edits of its rules.
+    mechanism = attributes.get("mechanism", current.mechanism if current else "custom")
+    steps = current.durations if current else ()
+    days = current.clean_window_days if current else 7
+    mode = current.decay_mode if current else "step_down"
+    if mechanism != "custom" and ("mechanism" in attributes or current is None):
+        # Adoption of a game mechanism uses its own defaults, independent of the old ladder.
+        steps = ORDINARY_DURATIONS if mechanism == "ordinary" else ()
+        days = 7
+        mode = "step_down" if mechanism == "ordinary" else "none"
+    # An older client can still edit rule values; a changed game schedule becomes a custom policy.
+    requested = (
+        tuple(attributes.get("steps", steps)),
+        attributes.get("clean_window_days", days),
+        attributes.get("decay_mode", mode),
+    )
+    if current and "mechanism" not in attributes and requested != (steps, days, mode):
+        mechanism = "custom"
     try:
-        # Service callers must preserve the complete policy invariant even outside the HTTP adapter.
-        PolicySpec(tuple(steps), clean_window_days, decay_mode)
+        # Validate the resolved rule in exactly the representation used by the prediction engine.
+        return PolicySpec(*requested, mechanism=mechanism)
     except ValueError as error:
-        # An empty, coerced or unsupported policy must fail before any version row is created.
+        # Invalid or incompatible fields must fail atomically, including calls outside HTTP.
         raise ValidationError({"steps": str(error)}) from error
+
+
+def publish_policy(offence_type, actor, spec):
+    """Append one validated policy and its ordered steps while holding the parent type lock."""
     # Version numbers are serialized by the parent type lock rather than a client-side counter.
     previous = current_policy(offence_type)
     # Metadata and step rows are immutable once this transaction publishes the new version.
@@ -44,12 +77,13 @@ def publish_policy(offence_type, actor, steps, clean_window_days=7, decay_mode="
         PolicyVersion(
             offence_type=offence_type,
             number=previous.number + 1 if previous else 1,
-            decay_mode=decay_mode,
-            clean_window_days=clean_window_days,
+            mechanism=spec.mechanism,
+            decay_mode=spec.decay_mode,
+            clean_window_days=spec.clean_window_days,
             created_by=actor,
         )
     )
-    for position, minutes in enumerate(steps, 1):
+    for position, minutes in enumerate(spec.durations, 1):
         # Each positive duration belongs to one explicit ordinal in this version only.
         save_validated(LadderStep(policy=policy, position=position, duration_minutes=minutes))
     return policy
@@ -67,22 +101,18 @@ def create_type(fleet, actor, attributes):
             note=attributes.get("note", ""),
         )
     )
-    publish_policy(
-        definition,
-        actor,
-        attributes["steps"],
-        attributes.get("clean_window_days", 7),
-        attributes.get("decay_mode", "step_down"),
-    )
+    publish_policy(definition, actor, _requested_policy(attributes))
     audit(fleet, actor, "type.created", definition.id, {"name": definition.name})
     return definition
 
 
 def seed_types(fleet, actor):
     """Give a new fleet the design's rule catalogue without creating fake Steam accounts."""
-    for name, code, note, steps in DEFAULT_TYPES:
-        # Each fleet has independent definitions, allowing later edits without cross-tenant effects.
-        create_type(fleet, actor, {"name": name, "code": code, "note": note, "steps": steps})
+    for name, code, note, mechanism in DEFAULT_TYPES:
+        # Each fleet owns its definitions; only ordinary reasons share an account's progression.
+        create_type(
+            fleet, actor, {"name": name, "code": code, "note": note, "mechanism": mechanism}
+        )
 
 
 @transaction.atomic
@@ -106,34 +136,28 @@ def update_type(fleet, actor, type_id, attributes):
         definition.code = definition.name[:3].upper()[:4]
     save_validated(definition)
     # Compare complete effective rule inputs so metadata-only edits do not create empty revisions.
-    existing_steps = list(
-        policy.steps.order_by("position").values_list("duration_minutes", flat=True)
-    )
-    # Missing optional policy fields retain their current value rather than resetting to defaults.
-    next_steps = attributes.get("steps", existing_steps)
-    next_days = attributes.get("clean_window_days", policy.clean_window_days)
-    next_mode = attributes.get("decay_mode", policy.decay_mode)
-    if (next_steps, next_days, next_mode) != (
-        existing_steps,
-        policy.clean_window_days,
-        policy.decay_mode,
-    ):
-        # A shorter new ladder can still inherit a larger saved state from an old version.
-        saved_bounds = CooldownEvent.objects.filter(policy__offence_type=definition).aggregate(
-            maximum_step=Max("assigned_step"), latest_expiry=Max("expires_at")
-        )
-        # Both an existing long restriction and retained states must fit the complete forecast.
-        maximum_state = max(len(next_steps), saved_bounds["maximum_step"] or 0)
-        latest_anchor = max(timezone.now(), saved_bounds["latest_expiry"] or timezone.now())
-        try:
-            # Reject unsupported timestamp arithmetic before publishing an unusable shared rule.
-            latest_anchor + timedelta(days=maximum_state * next_days)
-        except OverflowError as error:
-            raise ValidationError(
-                {"clean_window_days": "This rule exceeds the supported historical forecast range."}
-            ) from error
+    current = policy_spec(policy)
+    # A mechanism change gets its own immutable revision even if the durations coincide.
+    requested = _requested_policy(attributes, current)
+    if requested != current:
+        if requested.mechanism == "custom":
+            # Only custom schedules can introduce arbitrary window lengths. Previous game rules
+            # belong to other progressions and must not constrain a later custom policy.
+            saved_bounds = CooldownEvent.objects.filter(
+                policy__offence_type=definition, policy__mechanism="custom"
+            ).aggregate(maximum_step=Max("assigned_step"), latest_expiry=Max("expires_at"))
+            # Both an existing long restriction and retained states must fit the complete forecast.
+            maximum_state = max(len(requested.durations), saved_bounds["maximum_step"] or 0)
+            latest_anchor = max(timezone.now(), saved_bounds["latest_expiry"] or timezone.now())
+            try:
+                # Reject unsupported arithmetic before publishing an unusable rule.
+                latest_anchor + timedelta(days=maximum_state * requested.clean_window_days)
+            except OverflowError as error:
+                raise ValidationError(
+                    {"clean_window_days": "Rule exceeds the supported historical forecast range."}
+                ) from error
         # Existing events still point at their original immutable version and saved totals.
-        publish_policy(definition, actor, next_steps, next_days, next_mode)
+        publish_policy(definition, actor, requested)
     audit(fleet, actor, "type.updated", definition.id, {"name": definition.name})
     return definition
 

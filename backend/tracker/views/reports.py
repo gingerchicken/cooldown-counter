@@ -7,9 +7,16 @@ from tracker.serializers.inputs import (
     EventInputSerializer,
     ObservationInputSerializer,
     PreviewInputSerializer,
+    WarningInputSerializer,
 )
-from tracker.serializers.outputs import EventSerializer, ObservationSerializer, PreviewSerializer
+from tracker.serializers.outputs import (
+    EventSerializer,
+    ObservationSerializer,
+    PreviewSerializer,
+    WarningSerializer,
+)
 from tracker.services.reports import preview_report, record_event, record_observation
+from tracker.services.warnings import record_warning
 
 from .base import TrackerView
 
@@ -70,3 +77,20 @@ class ObservationCreateView(TrackerView):
             observation_projection(observation),
             status=201 if created else 200,
         )
+
+
+class WarningCreateView(TrackerView):
+    """Accept a warning notice without creating an issued restriction."""
+
+    @extend_schema(
+        request=WarningInputSerializer,
+        responses={200: WarningSerializer, 201: WarningSerializer},
+        operation_id="fleet_warnings_create",
+    )
+    def post(self, request, fleet_id):
+        """Record a new notice or return the original on an identical retry."""
+        # Fleet editors and owners use the same evidence permissions as for cooldown reports.
+        membership = self.membership(request, fleet_id, write=True)
+        attributes = self.validated(WarningInputSerializer, request.data)
+        warning, created = record_warning(membership.fleet, request.user, attributes)
+        return self.respond(WarningSerializer, warning, status=201 if created else 200)

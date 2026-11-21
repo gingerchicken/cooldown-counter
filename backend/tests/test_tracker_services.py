@@ -27,10 +27,10 @@ def workspace(user):
     return fleet, account
 
 
-def report_for(fleet, account, start):
+def report_for(fleet, account, start, reason="Abandoning"):
     """Prepare typed command inputs against the authoritative event-time preview."""
     # Stable type identity is obtained from this specific tenant's independent default catalogue.
-    definition = fleet.offence_types.get(name="Abandoning")
+    definition = fleet.offence_types.get(name=reason)
     # Each draft carries its own reviewed revision and policy identity.
     attributes = {"account_id": account.id, "type_id": definition.id, "started_at": start}
     preview = preview_report(fleet, attributes)
@@ -51,7 +51,7 @@ def test_invalid_initial_evidence_rolls_back_event_revision_and_audit(workspace,
     fleet, account = workspace
     audit_count = AuditEntry.objects.filter(fleet=fleet).count()
     report = report_for(fleet, account, timezone.now() - timedelta(minutes=5))
-    report["remaining_minutes"] = 31
+    report["remaining_minutes"] = 0
     with pytest.raises(ValidationError):
         # The event would otherwise be valid, so rollback must encompass earlier command writes.
         record_event(fleet, user, report)
@@ -126,3 +126,97 @@ def test_reused_observation_identity_rejects_changed_facts(workspace, user):
         record_observation(fleet, user, event.id, attributes)
     assert CooldownEvent.objects.filter(account=account).count() == 1
     assert event.observations.count() == 2
+
+
+@pytest.mark.parametrize("reason", ["VACLive", "GriefReports"])
+def test_special_notice_saves_unknown_assessment_and_chronological_timer(workspace, user, reason):
+    """A long restriction remains reportable and a backfilled reading cannot undo a later one."""
+    # A confirmed notice does not imply a known initial duration or enforcement level.
+    fleet, account = workspace
+    start = timezone.now() - timedelta(days=5)
+    report = report_for(fleet, account, start, reason)
+    report["remaining_minutes"] = 90 * 24 * 60
+    if reason == "VACLive":
+        # The affected player can be a member of the party of the flagged player.
+        report["vac_attribution"] = "party"
+    event, created = record_event(fleet, user, report)
+    assert created and event.assigned_step is event.total_minutes is event.expires_at is None
+    assert event.observed_expires_at == report["observed_at"] + timedelta(days=90)
+    assert event.vac_attribution == report.get("vac_attribution", "unknown")
+    assert record_event(fleet, user, report) == (event, False)
+
+    # A recent shorter timer corrects the displayed release time without editing the first reading.
+    latest = {"id": uuid4(), "observed_at": start + timedelta(days=3), "remaining_minutes": 90}
+    record_observation(fleet, user, event.id, latest)
+    # This earlier notice is entered last. Its timer stays in history without moving release.
+    record_observation(
+        fleet,
+        user,
+        event.id,
+        {
+            "id": uuid4(),
+            "observed_at": start + timedelta(days=2),
+            "remaining_minutes": 43200,
+        },
+    )
+    event.refresh_from_db()
+    assert event.observations.count() == 3
+    assert event.observed_expires_at == latest["observed_at"] + timedelta(minutes=90)
+
+
+def test_mixed_ordinary_reasons_and_timer_evidence_do_not_rewrite_prediction(workspace, user):
+    """A first long timer proves a higher minimum even if the saved prediction was 30 minutes."""
+    # The original forecast represents what was known before the first timer was recorded.
+    fleet, account = workspace
+    start = timezone.now() - timedelta(days=12)
+    report = report_for(fleet, account, start)
+    report["remaining_minutes"] = 7 * 24 * 60
+    event, _ = record_event(fleet, user, report)
+    assert event.total_minutes == 30 and event.expires_at == start + timedelta(minutes=30)
+
+    # A qualifying kick uses the same state and the actual timer to estimate the start of recovery.
+    kick_request = {
+        "account_id": account.id,
+        "type_id": fleet.offence_types.get(name="Kicking").id,
+        "started_at": start + timedelta(days=8),
+    }
+    later_preview = preview_report(fleet, kick_request)
+    assert later_preview["sample_count"] == 1 and later_preview["step"] == 5
+    assert later_preview["level_is_lower_bound"] and later_preview["total_minutes"] == 10080
+
+    # A backdated draft that predates the long timer sees only the original accepted assessment.
+    kick_request["started_at"] = start + timedelta(seconds=30)
+    before_observation = preview_report(fleet, kick_request)
+    assert before_observation["step"] == 2 and not before_observation["level_is_lower_bound"]
+
+
+def test_timer_seen_after_predicted_expiry_raises_minimum_level(workspace, user):
+    """An account still serving time after its 30-minute prediction has a higher minimum level."""
+    # The remaining reading alone fits the first band; elapsed minutes demonstrate the mismatch.
+    fleet, account = workspace
+    start = timezone.now() - timedelta(days=1)
+    report = report_for(fleet, account, start)
+    report.update(observed_at=start + timedelta(hours=1), remaining_minutes=5)
+    event, _ = record_event(fleet, user, report)
+    assert event.total_minutes == 30
+    # New predictions advance once from the supported minimum level two.
+    later = preview_report(
+        fleet,
+        {
+            "account_id": account.id,
+            "type_id": report["type_id"],
+            "started_at": start + timedelta(hours=2),
+        },
+    )
+    assert later["step"] == 3 and later["level_is_lower_bound"]
+
+
+def test_custom_ladder_rejects_an_out_of_range_observation(workspace, user):
+    """Existing fleet rules retain their original observation validation and expiry behavior."""
+    # Changing reason metadata can never make an independent custom ladder use game timer rules.
+    fleet, account = workspace
+    create_type(fleet, user, {"name": "Custom", "steps": [30]})
+    report = report_for(fleet, account, timezone.now() - timedelta(days=1), "Custom")
+    report["remaining_minutes"] = 31
+    with pytest.raises(ValidationError, match="cannot exceed"):
+        record_event(fleet, user, report)

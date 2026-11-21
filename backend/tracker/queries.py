@@ -1,23 +1,27 @@
 """Build tenant-scoped read projections from saved evidence and one server clock.
 
-Response-local history indexing takes O(E) time and memory for E loaded events.
-The calendar then performs O(A*T) indexed account/type lookups rather than
-rescanning E events for every pair. The pure engine's per-ladder sorts remain
-separate. No cross-request cache can retain stale evidence after a write.
+Index each issued event and its timer readings once per response. Ordinary reasons
+reuse one progression per account. Calendar forecasts visit only boundaries
+inside the selected date range. No cache survives a request.
 """
 
+from collections import Counter
 from collections.abc import Iterable
 from datetime import UTC, datetime, time
-from uuid import UUID
 
 from django.db.models import OuterRef, Prefetch, Subquery
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from tracker.models import CooldownEvent, OffenceType, PolicyVersion, SteamAccount
-from tracker.prediction import HistoryEntry, forecast, predict
-from tracker.services.catalogue import current_policy
-from tracker.services.reports import policy_spec
+from tracker.prediction import forecast, predict
+from tracker.services.catalogue import current_policy, policy_spec
+from tracker.services.reports import (
+    history_entry,
+    history_key,
+    observation_only_explanation,
+)
 
 
 def policy_projection(policy):
@@ -26,6 +30,7 @@ def policy_projection(policy):
     return {
         "id": policy.id,
         "number": policy.number,
+        "mechanism": policy.mechanism,
         "decay_mode": policy.decay_mode,
         "clean_window_days": policy.clean_window_days,
         "steps": [step.duration_minutes for step in policy.steps.all()],
@@ -82,7 +87,13 @@ def event_projection(event):
         "policy_id": event.policy_id,
         "policy_number": event.policy.number,
         "started_at": event.started_at,
-        "expires_at": event.expires_at,
+        # Keep the pinned estimate readable alongside the currently observed release time.
+        "expires_at": event.observed_expires_at or event.expires_at,
+        "observed_expires_at": event.observed_expires_at,
+        "predicted_expires_at": event.expires_at,
+        "mechanism": event.policy.mechanism,
+        "level_is_lower_bound": event.level_is_lower_bound,
+        "vac_attribution": event.vac_attribution,
         "assigned_step": event.assigned_step,
         "total_minutes": event.total_minutes,
         "is_override": event.is_override,
@@ -124,54 +135,63 @@ def current_policies(fleet):
     )
 
 
-def _group_histories(
-    events: Iterable[CooldownEvent],
-) -> dict[tuple[UUID, UUID], list[HistoryEntry]]:
-    """Adapt each saved assessment once into its stable account/type ladder.
-
-    Callers supply events in persisted start/UUID order. Appending preserves
-    that ordering for last-recorded summaries while the pure engine retains
-    its independent sort and validation boundary.
-    """
-    # Each pair owns a chronological snapshot list; names and policy revisions are not keys.
+def _group_histories(events: Iterable[CooldownEvent]):
+    """Index saved assessments by account and by the progression pinned to each event."""
+    # Ordinary reasons share one key. Custom policy versions retain their stable reason identity.
     histories = {}
     for event in events:
-        # Stable type identity deliberately combines old and current versions of the same ladder.
-        ladder_key = (event.account_id, event.policy.offence_type_id)
-        # This list is reused by prediction, forecast and evidence summaries within the response.
-        history = histories.setdefault(ladder_key, [])
-        history.append(
-            HistoryEntry(event.started_at, event.expires_at, event.assigned_step, str(event.id))
-        )
+        # Observation-only events affect availability but cannot supply an escalation level.
+        entry = history_entry(event)
+        if entry is not None:
+            histories.setdefault((event.account_id, history_key(event.policy)), []).append(entry)
     return histories
 
 
 def account_projection(account, policies, now, *, detail=False):
-    """Show current availability and per-type next outcomes without rewriting stored steps."""
-    # One prefetched event sequence supports both current status and each independent ladder.
+    """Project availability from evidence and conditional predictions from applicable history."""
+    # Prefetched events are already in chronological order with deterministic ties.
     events = list(account.events.all())
-    # A single pass creates reusable saved-state lists instead of filtering events per policy.
     histories = _group_histories(events)
-    # Active requires both temporal bounds; future facts are never prematurely restricted.
-    active = [event for event in events if event.started_at <= now < event.expires_at]
-    # Predictions are generated at the same explicit instant as every fleet status value.
+    # Observation-only sample counts count issued restrictions independently of timer updates.
+    counts = Counter(history_key(event.policy) for event in events)
+    # The newest game timer can extend or shorten the active span relative to the initial guess.
+    active = [
+        event
+        for event in events
+        if event.started_at <= now < (event.observed_expires_at or event.expires_at)
+    ]
+    # An account may have many ordinary reasons; evaluate their identical shared history once.
+    predictions_by_history = {}
+    # Keep a prediction card per selectable reason so operators can still filter by its identity.
     predictions = []
     for policy in policies:
-        # Current policy can differ from historical versions, which retain their original totals.
-        history = histories.get((account.id, policy.offence_type_id), ())
-        prediction = predict(policy_spec(policy), history, now)
+        # Unknown special schedules have no level, automatic duration, or forecast of recovery.
+        key = history_key(policy)
+        history = histories.get((account.id, key), ())
+        special = policy.mechanism in (
+            PolicyVersion.Mechanism.VACNET,
+            PolicyVersion.Mechanism.GRIEFING,
+        )
+        if not special and key not in predictions_by_history:
+            predictions_by_history[key] = predict(policy_spec(policy), history, now)
+        # Special notices expose their observation count and explanation without inventing a level.
+        prediction = predictions_by_history.get(key)
         predictions.append(
             {
                 "type_id": policy.offence_type_id,
                 "type_name": policy.offence_type.name,
-                "step": prediction.step,
+                "mechanism": policy.mechanism,
+                "step": prediction.step if prediction else None,
                 "total_steps": len(policy.steps.all()),
-                "total_minutes": prediction.total_minutes,
-                "base_step": prediction.base_step,
-                "sample_count": len(history),
-                "recorded_step": history[-1].assigned_step if history else 0,
-                "next_decay_at": prediction.next_decay_at,
-                "transition": prediction.transition,
+                "total_minutes": prediction.total_minutes if prediction else None,
+                "base_step": prediction.base_step if prediction else None,
+                "level_is_lower_bound": prediction.level_is_lower_bound if prediction else False,
+                "sample_count": counts[key],
+                "recorded_step": history[-1].assigned_step if history else (None if special else 0),
+                "next_decay_at": prediction.next_decay_at if prediction else None,
+                "transition": prediction.transition
+                if prediction
+                else observation_only_explanation(policy),
             }
         )
     # Identity and counts remain available even for archived accounts and empty histories.
@@ -186,11 +206,16 @@ def account_projection(account, policies, now, *, detail=False):
         "active_type_ids": sorted({event.policy.offence_type_id for event in active}),
         "status": "active" if active else ("clear" if events else "clean"),
         "predictions": predictions,
-        "active_until": max((event.expires_at for event in active), default=None),
+        "active_until": max(
+            ((event.observed_expires_at or event.expires_at) for event in active), default=None
+        ),
         "first_observed": min((event.started_at for event in events), default=None),
     }
     if detail:
         # Detail has all immutable assessments and observations, not just a representative row.
+        projection["warnings"] = list(
+            account.warnings.select_related("created_by", "policy__offence_type")
+        )
         projection["events"] = [event_projection(event) for event in events]
     return projection
 
@@ -220,7 +245,11 @@ def calendar_projection(fleet, filters):
     start = datetime.combine(filters["start"], time.min, UTC)
     end = datetime.combine(filters["end"], time.min, UTC)
     # Calendar records are unique events; weekly rendering never changes this count unit.
-    events = event_queryset(fleet).filter(started_at__lt=end, expires_at__gt=start)
+    events = (
+        event_queryset(fleet)
+        .alias(effective_expiry=Coalesce("observed_expires_at", "expires_at"))
+        .filter(started_at__lt=end, effective_expiry__gt=start)
+    )
     # One authoritative reference time governs active filtering and future forecasts.
     now = timezone.now()
     if filters.get("account_id"):
@@ -233,10 +262,10 @@ def calendar_projection(fleet, filters):
         events = events.filter(policy__offence_type_id=filters["type_id"])
     if filters["status"] == "active":
         # Status and offence conditions apply to the same event, avoiding cross-ladder matches.
-        events = events.filter(started_at__lte=now, expires_at__gt=now)
+        events = events.filter(started_at__lte=now, effective_expiry__gt=now)
     elif filters["status"] == "clear":
         # The calendar explicitly means expired records, while account lists name clear accounts.
-        events = events.filter(expires_at__lte=now)
+        events = events.filter(effective_expiry__lte=now)
     # Index complete scoped history once; visible-range records cannot provide every decay anchor.
     histories = _group_histories(event_queryset(fleet))
     # Active definitions have current rules; archived history remains visible as recorded events.
@@ -244,6 +273,15 @@ def calendar_projection(fleet, filters):
     # Account identities are reused across markers instead of requiring one database read per
     # marker.
     accounts = {account.id: account for account in SteamAccount.objects.filter(fleet=fleet)}
+    # Select one representative reason per progression. A reason filter selects its own label/ID.
+    marker_policies = {}
+    for policy in policies:
+        # Observation-only restrictions cannot generate inferred step-down dates.
+        if policy.mechanism in (PolicyVersion.Mechanism.VACNET, PolicyVersion.Mechanism.GRIEFING):
+            continue
+        if not filters.get("type_id") or policy.offence_type_id == filters["type_id"]:
+            marker_policies.setdefault(history_key(policy), policy)
+    # Each returned marker describes a single account transition, even with many ordinary reasons.
     markers = []
     for account in accounts.values():
         # Archived accounts are historical evidence, not sources of new availability forecasts.
@@ -251,35 +289,35 @@ def calendar_projection(fleet, filters):
             filters.get("account_id") and account.id != filters["account_id"]
         ):
             continue
-        for policy in policies:
-            # The same offence restriction applies to forecasts and recorded events.
-            if filters.get("type_id") and policy.offence_type_id != filters["type_id"]:
-                continue
-            # One indexed ladder retains overlap anchors without scanning unrelated saved events.
-            history = histories.get((account.id, policy.offence_type_id), ())
-            for point in forecast(policy_spec(policy), history, now):
-                # A future marker is included only when it is actually inside the requested dates.
-                if start <= point.at < end:
-                    markers.append(
-                        {
-                            "account_id": account.id,
-                            "account_tag": account.tag,
-                            "type_id": policy.offence_type_id,
-                            "type_name": policy.offence_type.name,
-                            "at": point.at,
-                            "stored_step": point.stored_step,
-                            "next_step": point.next_step,
-                            "total_minutes": point.total_minutes,
-                        }
-                    )
+        for key, policy in marker_policies.items():
+            # All qualifying ordinary reasons read the same progression for this account.
+            history = histories.get((account.id, key), ())
+            for point in forecast(policy_spec(policy), history, now, start=start, end=end):
+                # A shared marker represents all ordinary reasons for this account.
+                markers.append(
+                    {
+                        "account_id": account.id,
+                        "account_tag": account.tag,
+                        "type_id": policy.offence_type_id,
+                        "type_name": "Ordinary competitive"
+                        if policy.mechanism == PolicyVersion.Mechanism.ORDINARY
+                        else policy.offence_type.name,
+                        "at": point.at,
+                        "stored_step": point.stored_step,
+                        "next_step": point.next_step,
+                        "total_minutes": point.total_minutes,
+                    }
+                )
     # Fleet totals are explicitly fleet-wide, independent of visible date segments and filters.
-    global_events = CooldownEvent.objects.filter(account__fleet=fleet)
+    global_events = CooldownEvent.objects.filter(account__fleet=fleet).alias(
+        effective_expiry=Coalesce("observed_expires_at", "expires_at")
+    )
     return {
         "events": [event_projection(event) for event in events],
         "forecasts": markers,
         "account_count": SteamAccount.objects.filter(fleet=fleet, archived_at__isnull=True).count(),
         "active_count": global_events.filter(
-            started_at__lte=now, expires_at__gt=now, account__archived_at__isnull=True
+            started_at__lte=now, effective_expiry__gt=now, account__archived_at__isnull=True
         )
         .values("account_id")
         .distinct()

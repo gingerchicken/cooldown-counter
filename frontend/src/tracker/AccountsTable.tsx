@@ -1,3 +1,4 @@
+import { isMinimumDuration } from "./mechanisms";
 import { useState } from "react";
 import type { Account } from "./types";
 import { formatDuration, formatTimestamp, severity } from "./format";
@@ -59,12 +60,17 @@ export function AccountsTable({
             {shown.slice(0, visibleCount).map((account) => {
               // account is one accepted row; representative is its highest current estimate.
               // Sorting a copy preserves backend prediction order; names break equal-duration ties.
-              const representative = [...account.predictions].sort(
-                (left, right) =>
-                  // left/right are per-offence estimates compared by duration then readable label.
-                  right.total_minutes - left.total_minutes ||
-                  left.type_name.localeCompare(right.type_name),
-              )[0];
+              const representative = account.predictions
+                .filter(
+                  // Unknown special-case durations cannot outrank a known estimate.
+                  (prediction) => prediction.total_minutes !== null,
+                )
+                .sort(
+                  (left, right) =>
+                    // left/right are per-offence estimates compared by duration then readable label.
+                    (right.total_minutes ?? 0) - (left.total_minutes ?? 0) ||
+                    left.type_name.localeCompare(right.type_name),
+                )[0];
               return (
                 <tr key={account.id}>
                   <td>
@@ -87,7 +93,7 @@ export function AccountsTable({
                       {account.status === "active"
                         ? "On cooldown"
                         : account.status === "clean"
-                          ? "Never cooled down"
+                          ? "No recorded cooldowns"
                           : "Clear"}
                     </span>
                     {account.active_until && (
@@ -101,7 +107,9 @@ export function AccountsTable({
                       {account.predictions
                         .filter(
                           // prediction must have actual supporting offences before a history chip is shown.
-                          (prediction) => prediction.sample_count > 0,
+                          (prediction) =>
+                            prediction.sample_count > 0 &&
+                            prediction.base_step !== null,
                         )
                         .map((prediction) => {
                           // prediction supplies recorded and decayed state for one offence, keeping its
@@ -112,8 +120,14 @@ export function AccountsTable({
                               key={prediction.type_id}
                             >
                               {prediction.type_name}{" "}
-                              <strong>last S{prediction.recorded_step}</strong>
-                              <span>current S{prediction.base_step}</span>
+                              <strong>
+                                last S{prediction.recorded_step}
+                                {prediction.level_is_lower_bound ? "+" : ""}
+                              </strong>
+                              <span>
+                                current S{prediction.base_step}
+                                {prediction.level_is_lower_bound ? "+" : ""}
+                              </span>
                             </span>
                           );
                         })}
@@ -131,6 +145,10 @@ export function AccountsTable({
                         <strong
                           className={`mono ${severity(representative.total_minutes)}`}
                         >
+                          {isMinimumDuration(
+                            representative.level_is_lower_bound,
+                            representative.total_minutes,
+                          ) && "At least "}
                           {formatDuration(representative.total_minutes)}
                         </strong>
                         <span className="small muted">
@@ -138,7 +156,11 @@ export function AccountsTable({
                         </span>
                       </>
                     ) : (
-                      <span className="muted">No active offence types</span>
+                      <span className="muted">
+                        {account.predictions.length
+                          ? "Duration unknown"
+                          : "No active offence types"}
+                      </span>
                     )}
                   </td>
                 </tr>

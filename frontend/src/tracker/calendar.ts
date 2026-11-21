@@ -1,3 +1,4 @@
+import { isMinimumDuration } from "./mechanisms";
 import type { CooldownEvent, Forecast } from "./types";
 import { formatDuration, formatTimestamp } from "./format";
 
@@ -14,7 +15,9 @@ export interface CalendarEntry {
   firstColumn: number;
   lastColumn: number;
   /** Duration controls the shared appearance convention. */
-  minutes: number;
+  minutes: number | null;
+  /** Text distinguishes a modeled duration from the timer-derived bounds of a recorded span. */
+  durationLabel: string;
   /** Forecast state never masquerades as observed evidence. */
   forecast: boolean;
   /** startsHere and endsHere distinguish actual endpoints from continuation into another week. */
@@ -87,17 +90,28 @@ export function weekEntries(
     if (eventEnd <= start || eventStart >= end) return;
     // offenceLabel uses the configured compact code; an intentionally blank code keeps the complete name.
     const offenceLabel = typeCodes.get(event.type_id) || event.type_name;
+    // A duration in the final ordinary band stays exact even when the underlying level is unknown.
+    const minimumDuration = isMinimumDuration(
+      event.level_is_lower_bound,
+      event.total_minutes,
+    );
+    // A span can follow a timer that contradicts the saved prediction. Identify that duration as an estimate.
+    const durationLabel =
+      event.total_minutes === null
+        ? "Observed timer"
+        : `${event.observed_expires_at && event.observed_expires_at !== event.predicted_expires_at ? "Predicted " : ""}${minimumDuration ? "at least " : ""}${formatDuration(event.total_minutes)}`;
     entries.push({
       key: event.id,
       accountId: event.account_id,
       firstColumn: Math.max(0, Math.floor((eventStart - start) / DAY_MS)),
       lastColumn: Math.min(6, Math.floor((eventEnd - 1 - start) / DAY_MS)),
       minutes: event.total_minutes,
+      durationLabel,
       forecast: false,
       startsHere: eventStart >= start,
       endsHere: eventEnd <= end,
       label: `${event.account_tag} · ${offenceLabel}`,
-      description: `${event.account_tag} ${event.type_name}, ${formatDuration(event.total_minutes)}, ${formatTimestamp(event.started_at)} to ${formatTimestamp(event.expires_at)}`,
+      description: `${event.account_tag} ${event.type_name}, ${durationLabel}, ${formatTimestamp(event.started_at)} to ${formatTimestamp(event.expires_at)}`,
     });
   });
   forecasts.forEach((forecast) => {
@@ -108,13 +122,18 @@ export function weekEntries(
     // A boundary at the next week's first instant belongs only to that following grid.
     if (instant < start || instant >= end) return;
     // offenceLabel distinguishes concurrent forecast categories without shortening their accessible descriptions.
-    const offenceLabel = typeCodes.get(forecast.type_id) || forecast.type_name;
+    // Shared markers may reference one reason for filtering. Preserve the server's account-wide label.
+    const offenceLabel =
+      forecast.type_name === "Ordinary competitive"
+        ? forecast.type_name
+        : typeCodes.get(forecast.type_id) || forecast.type_name;
     entries.push({
       key: `${forecast.account_id}-${forecast.type_id}-${forecast.at}`,
       accountId: forecast.account_id,
       firstColumn: column,
       lastColumn: column,
       minutes: forecast.total_minutes,
+      durationLabel: formatDuration(forecast.total_minutes),
       forecast: true,
       startsHere: true,
       endsHere: true,

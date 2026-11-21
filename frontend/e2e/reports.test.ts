@@ -91,8 +91,13 @@ test("[REPORT-004] [US-031] [US-033] [US-034] conflicting remaining time offers 
   await previewDialog(page, dialog);
   await expect(dialog.getByRole("button", { name: /Move to step/ })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Record cooldown", exact: true }).click();
-  await expect(dialog.getByRole("alert").first()).toBeVisible();
-  expect((await accountDetail(page.request, trackedFleet.fleet.id, trackedFleet.account.id)).events).toEqual([]);
+  await expect(dialog).not.toBeVisible();
+  // Evidence can exceed every ordinary stage while preserving the 30-minute prediction for comparison.
+  const saved = (await accountDetail(page.request, trackedFleet.fleet.id, trackedFleet.account.id)).events;
+  expect(saved).toHaveLength(1);
+  expect(saved[0].observations[0].remaining_minutes).toBe(8 * 1440);
+  expect(saved[0].total_minutes).toBe(30);
+  expect(saved[0].expires_at).toBe(saved[0].observed_expires_at);
 });
 
 test("[REPORT-005] [US-029] [US-031] zero negative fractional and future input cannot become fabricated evidence", async ({ fleetPage: page, trackedFleet }) => {

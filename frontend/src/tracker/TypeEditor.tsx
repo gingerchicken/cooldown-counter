@@ -4,6 +4,8 @@ import { Modal } from "./Modal";
 import { describeError } from "./api";
 import type { TrackerApi } from "./api";
 import type { OffenceType, TypeInput } from "./types";
+import { mechanismGuidance, mechanismNames } from "./mechanisms";
+import type { Mechanism } from "./mechanisms";
 import { editableStep, formatDuration, severity, stepMinutes } from "./format";
 
 /**
@@ -31,11 +33,17 @@ export function TypeEditor({
     [code, setCode] = useState(definition?.code ?? ""),
     [note, setNote] = useState(definition?.note ?? ""),
     [policyId, setPolicyId] = useState(definition?.policy.id ?? "");
+  // The selected mechanism controls whether the server supplies the game rules or accepts custom durations.
+  const [mechanism, setMechanism] = useState<Mechanism>(
+    definition?.policy.mechanism ?? "custom",
+  );
+  // A special policy has no duration rows. Seed an editable draft only for a deliberate switch to custom.
+  const initialSteps = definition?.policy.steps.length
+    ? definition.policy.steps
+    : [30];
   // steps/setSteps retain ordered amount/unit text; windowDays/setWindowDays retain clean-window day text.
   // mode/setMode select the next revision's decay rule without changing existing event assessments.
-  const [steps, setSteps] = useState(
-      (definition?.policy.steps ?? [30]).map(editableStep),
-    ),
+  const [steps, setSteps] = useState(initialSteps.map(editableStep)),
     [windowDays, setWindowDays] = useState(
       String(definition?.policy.clean_window_days ?? 7),
     ),
@@ -77,7 +85,7 @@ export function TypeEditor({
       // Display the accepted rule explicitly while preserving every local field for a considered retry.
       setPolicyId(latest.policy.id);
       setReview(
-        `Latest policy v${latest.policy.number}: ${latest.policy.steps.map(formatDuration).join(" -> ")}. Your draft is unchanged; review it before saving.`,
+        `Latest policy v${latest.policy.number}: ${mechanismNames[latest.policy.mechanism]}${latest.policy.steps.length ? ` · ${latest.policy.steps.map(formatDuration).join(" -> ")}` : ""}. Review it before saving.`,
       );
     } catch (failure) {
       // failure may mean lost permission or an unavailable type; keep the draft and previous review visible.
@@ -113,14 +121,18 @@ export function TypeEditor({
     // Preserve invalid text for correction instead of rounding or substituting a duration.
     const durations = steps.map((step) => stepMinutes(step.amount, step.unit));
     // duration is one conversion result; any null prevents publishing the entire inconsistent ladder.
-    if (durations.some((duration) => duration === null)) {
+    if (
+      mechanism === "custom" &&
+      durations.some((duration) => duration === null)
+    ) {
       setError("Every step must represent a positive whole-minute duration.");
       return;
     }
     if (
-      !/^\d+$/.test(windowDays) ||
-      !Number.isSafeInteger(Number(windowDays)) ||
-      Number(windowDays) < 1
+      mechanism === "custom" &&
+      (!/^\d+$/.test(windowDays) ||
+        !Number.isSafeInteger(Number(windowDays)) ||
+        Number(windowDays) < 1)
     ) {
       // A clean window is a positive integral day count, not an implicitly rounded or exponent-form value.
       setError("Enter a positive whole clean-window day count.");
@@ -131,9 +143,13 @@ export function TypeEditor({
       name: name.trim(),
       code: code.trim().toUpperCase(),
       note: note.trim(),
-      steps: durations as number[],
-      clean_window_days: Number(windowDays),
-      decay_mode: mode,
+      mechanism,
+      // Game policies are versioned by the server. Send numeric edits only for explicit custom rules.
+      ...(mechanism === "custom" && {
+        steps: durations as number[],
+        clean_window_days: Number(windowDays),
+        decay_mode: mode,
+      }),
     };
     // Lock the complete draft until metadata and any new immutable policy version are accepted together.
     setPending(true);
@@ -168,8 +184,8 @@ export function TypeEditor({
         }}
       >
         <p>
-          Define the modelled ladder. Saved cooldowns keep their original policy
-          and assessment.
+          Choose the rules for this reason. Saved cooldowns keep their original
+          policy and assessment.
         </p>
         <div className="form-columns">
           <label>
@@ -211,118 +227,144 @@ export function TypeEditor({
             }}
           />
         </label>
-        <fieldset>
-          <legend>Escalation ladder</legend>
-          {steps.map((step, index) => {
-            // step/index identify this ordered draft row; minutes is its whole-minute preview or null.
-            // Show invalid conversion explicitly instead of presenting a fabricated saved duration.
-            const minutes = stepMinutes(step.amount, step.unit);
-            return (
-              <div className="step-editor" key={index}>
-                <strong>Step {index + 1}</strong>
-                <label>
-                  Step {index + 1} amount
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    disabled={pending}
-                    value={step.amount}
-                    onChange={(event) => {
-                      // event retains raw quantity text; only this row's amount is replaced in the draft.
-                      changeStep(index, { amount: event.target.value });
-                    }}
-                  />
-                </label>
-                <label>
-                  Step {index + 1} unit
-                  <select
-                    disabled={pending}
-                    value={step.unit}
-                    onChange={(event) => {
-                      // event selects the interpretation of this amount; other rows keep their own units.
-                      changeStep(index, { unit: event.target.value });
-                    }}
-                  >
-                    <option value="m">Minutes</option>
-                    <option value="h">Hours</option>
-                    <option value="d">Days</option>
-                  </select>
-                </label>
-                <span className={severity(minutes ?? 0)}>
-                  {minutes === null
-                    ? "Invalid duration"
-                    : formatDuration(minutes)}
-                </span>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={pending || steps.length === 1}
-                  aria-label={`Remove step ${index + 1}`}
-                  onClick={() => {
-                    // At least one step remains, matching the server's nonempty policy invariant.
-                    // current is the latest draft; position, rather than the unused step, identifies removal.
-                    setSteps((current) =>
-                      current.filter((_, position) => position !== index),
-                    );
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            className="secondary"
+        <label>
+          Cooldown model
+          <select
+            value={mechanism}
             disabled={pending}
-            onClick={() => {
-              // current is the latest ordered draft; append an editable one-day row before publication.
-              setSteps((current) => [...current, { amount: "1", unit: "d" }]);
+            onChange={(event) => {
+              // Switching models affects future forecasts while keeping past event versions intact.
+              setMechanism(event.target.value as Mechanism);
             }}
           >
-            Add step
-          </button>
-          <p className="muted">
-            Changing units reinterprets the amount. Preview shows the exact
-            saved duration. Then holds at the final step.
-          </p>
-        </fieldset>
-        <div className="form-columns">
-          <label>
-            Clean window (days)
-            <input
-              type="number"
-              min="1"
-              step="1"
-              disabled={pending}
-              value={windowDays}
-              onChange={(event) => {
-                // event retains clean-window day text for integral validation at the publication boundary.
-                setWindowDays(event.target.value);
-              }}
-            />
-          </label>
-          <label>
-            Decay mode
-            <select
-              disabled={pending}
-              value={mode}
-              onChange={(event) => {
-                // event selects one supported decay rule; existing assessments keep their pinned policy.
-                setMode(event.target.value as TypeInput["decay_mode"]);
-              }}
-            >
-              <option value="step_down">Step down one level</option>
-              <option value="full_reset">Full reset</option>
-              <option value="none">No decay</option>
-            </select>
-          </label>
-        </div>
-        <p className="muted">
-          Clean time starts at the latest outstanding expiry. One day is 24
-          elapsed hours.
-        </p>
+            {Object.entries(mechanismNames).map(([identity, label]) => (
+              // The option value is the published mechanism identity, independent of the display name.
+              <option key={identity} value={identity}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted">{mechanismGuidance[mechanism]}</p>
+        {mechanism === "custom" && (
+          <>
+            <fieldset>
+              <legend>Escalation ladder</legend>
+              {steps.map((step, index) => {
+                // step/index identify this ordered draft row; minutes is its whole-minute preview or null.
+                // Show invalid conversion explicitly instead of presenting a fabricated saved duration.
+                const minutes = stepMinutes(step.amount, step.unit);
+                return (
+                  <div className="step-editor" key={index}>
+                    <strong>Step {index + 1}</strong>
+                    <label>
+                      Step {index + 1} amount
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        disabled={pending}
+                        value={step.amount}
+                        onChange={(event) => {
+                          // event retains raw quantity text; only this row's amount is replaced in the draft.
+                          changeStep(index, { amount: event.target.value });
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Step {index + 1} unit
+                      <select
+                        disabled={pending}
+                        value={step.unit}
+                        onChange={(event) => {
+                          // event selects the interpretation of this amount; other rows keep their own units.
+                          changeStep(index, { unit: event.target.value });
+                        }}
+                      >
+                        <option value="m">Minutes</option>
+                        <option value="h">Hours</option>
+                        <option value="d">Days</option>
+                      </select>
+                    </label>
+                    <span className={severity(minutes ?? 0)}>
+                      {minutes === null
+                        ? "Invalid duration"
+                        : formatDuration(minutes)}
+                    </span>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={pending || steps.length === 1}
+                      aria-label={`Remove step ${index + 1}`}
+                      onClick={() => {
+                        // At least one step remains, matching the server's nonempty policy invariant.
+                        // current is the latest draft; position, rather than the unused step, identifies removal.
+                        setSteps((current) =>
+                          current.filter((_, position) => position !== index),
+                        );
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                className="secondary"
+                disabled={pending}
+                onClick={() => {
+                  // current is the latest ordered draft; append an editable one-day row before publication.
+                  setSteps((current) => [
+                    ...current,
+                    { amount: "1", unit: "d" },
+                  ]);
+                }}
+              >
+                Add step
+              </button>
+              <p className="muted">
+                Changing units reinterprets the amount. Preview shows the exact
+                saved duration. Then holds at the final step.
+              </p>
+            </fieldset>
+            <div className="form-columns">
+              <label>
+                Clean window (days)
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  disabled={pending}
+                  value={windowDays}
+                  onChange={(event) => {
+                    // event retains clean-window day text for integral validation at the publication boundary.
+                    setWindowDays(event.target.value);
+                  }}
+                />
+              </label>
+              <label>
+                Decay mode
+                <select
+                  disabled={pending}
+                  value={mode}
+                  onChange={(event) => {
+                    // event selects one supported decay rule; existing assessments keep their pinned policy.
+                    setMode(event.target.value as TypeInput["decay_mode"]);
+                  }}
+                >
+                  <option value="step_down">Step down one level</option>
+                  <option value="full_reset">Full reset</option>
+                  <option value="none">No decay</option>
+                </select>
+              </label>
+            </div>
+            <p className="muted">
+              Clean time starts at the latest outstanding expiry. One day is 24
+              elapsed hours.
+            </p>
+          </>
+        )}
         {review && <p role="status">{review}</p>}
         {error && (
           <p role="alert" className="error">

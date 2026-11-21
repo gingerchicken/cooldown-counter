@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
+import { CooldownHistory } from "./CooldownHistory";
 import { ReportDialog } from "./ReportDialog";
 import {
   accountFixture,
@@ -557,4 +558,98 @@ it("[RQ-334 RQ-335 RQ-336 RQ-164 RQ-178 RQ-347] selects report account and offen
     .element();
   expect(typeSelect.matches(":open")).toBe(false);
   expect(document.activeElement).toBe(typeSelect);
+});
+
+it("records a VACNet party timer beyond thirty days without an assumed ladder", async () => {
+  // This mechanism delegates the actual duration to the notice and publishes no steps.
+  const definition = typeFixture({
+    name: "VACLive",
+    policy: { ...typeFixture().policy, mechanism: "vacnet", steps: [], decay_mode: "none" },
+  });
+  // The preview contains review tokens even when the next level, duration and expiry are unknown.
+  const api = trackerFixture({ preview: vi.fn().mockResolvedValue(previewFixture({
+    step: null, base_step: null, total_minutes: null, expires_at: null, transition: "Duration unknown.",
+  })) });
+  // Exercise the actual report form so a guessed first duration cannot block or distort the notice.
+  const screen = await render(<ReportDialog accounts={[accountFixture()]} types={[definition]}
+    api={api} fleetId={fleetFixture().id} onDismiss={vi.fn()} onSaved={vi.fn()} />);
+  await screen.getByLabelText("Days", { exact: true }).fill("90");
+  await screen.getByRole("combobox", { name: "Who was flagged on the VACNet notice?", exact: true }).selectOptions("party");
+  await screen.getByRole("button", { name: "Preview cooldown" }).click();
+  await expect.element(screen.getByText("Unknown", { exact: true }).last()).toBeVisible();
+  expect(screen.getByRole("slider").query()).toBeNull();
+  await screen.getByRole("button", { name: "Record cooldown" }).click();
+  expect(api.record).toHaveBeenCalledWith(fleetFixture().id, expect.objectContaining({
+    remaining_minutes: 129600, vac_attribution: "party",
+  }));
+});
+
+it("records a griefing warning separately without requiring a cooldown timer", async () => {
+  // A warning has its own command and must reach the account history without an issued restriction.
+  const definition = typeFixture({
+    name: "GriefReports",
+    policy: { ...typeFixture().policy, mechanism: "griefing", steps: [], decay_mode: "none" },
+  });
+  // These spies make accidental calls to the cooldown prediction or write commands observable.
+  const api = trackerFixture();
+  const onWarningSaved = vi.fn();
+  // The same form can collect an issued griefing restriction or an earlier warning-only notice.
+  const screen = await render(<ReportDialog accounts={[accountFixture()]} types={[definition]}
+    api={api} fleetId={fleetFixture().id} onDismiss={vi.fn()} onSaved={vi.fn()} onWarningSaved={onWarningSaved} />);
+  await screen.getByRole("combobox", { name: "Notice received", exact: true }).selectOptions("warning");
+  expect(screen.getByLabelText("Days", { exact: true }).query()).toBeNull();
+  await screen.getByRole("button", { name: "Record warning" }).click();
+  expect(api.recordWarning).toHaveBeenCalledWith(fleetFixture().id, expect.objectContaining({
+    account_id: accountFixture().id, type_id: definition.id, policy_id: definition.policy.id,
+  }));
+  expect(api.preview).not.toHaveBeenCalled();
+  expect(api.record).not.toHaveBeenCalled();
+  expect(onWarningSaved).toHaveBeenCalledWith(accountFixture().id);
+});
+
+
+it("flags an impossible ordinary timer in both the draft and saved history", async () => {
+  // An eight-day ordinary reading exceeds the published ceiling even if the hidden level is high.
+  const definition = typeFixture({ policy: { ...typeFixture().policy, mechanism: "ordinary" } });
+  // The warning stays visible before writing and never prevents the operator preserving the reading.
+  const draft = await render(<ReportDialog accounts={[accountFixture()]} types={[definition]}
+    api={trackerFixture()} fleetId={fleetFixture().id} onDismiss={vi.fn()} onSaved={vi.fn()} />);
+  await draft.getByLabelText("Days", { exact: true }).fill("8");
+  await expect.element(draft.getByText(/This timer exceeds every ordinary duration/)).toBeVisible();
+  await draft.unmount();
+  // The latest reading may fit the schedule. Keep a warning about any contradictory earlier reading.
+  const reading = eventFixture().observations[0];
+  const event = eventFixture({ mechanism: "ordinary", observations: [
+    { ...reading, id: "original", remaining_minutes: 8 * 1440 },
+    { ...reading, id: "latest", remaining_minutes: 30 },
+  ] });
+  const history = await render(<CooldownHistory events={[event]} canWrite onObserve={vi.fn()} />);
+  await expect.element(history.getByText(/This timer exceeds every ordinary duration/)).toBeVisible();
+});
+
+
+it("clears the untouched custom timer suggestion on a VACNet notice and preserves entered minutes", async () => {
+  // A legacy fleet may list a custom reason first, giving the initial draft its customary 30-minute suggestion.
+  const custom = typeFixture();
+  // Published game mechanisms require an actual reading regardless of the previous selection.
+  const vacnet = typeFixture({
+    id: "vac-reason", name: "VACLive",
+    policy: { ...custom.policy, mechanism: "vacnet", decay_mode: "none", steps: [] },
+  });
+  // Use the real form to distinguish an untouched suggestion from an operator-entered reading.
+  const screen = await render(<ReportDialog accounts={[accountFixture()]} types={[custom, vacnet]}
+    api={trackerFixture()} fleetId={fleetFixture().id} onDismiss={vi.fn()} onSaved={vi.fn()} />);
+  // The reason changes repeatedly while the same form retains the entered evidence.
+  const reason = screen.getByRole("combobox", { name: "Offence type", exact: true });
+  // Number fields expose null when clear and a numeric value when the form has actual minute text.
+  const minutes = screen.getByRole("spinbutton", { name: "Minutes", exact: true });
+  await expect.element(minutes).toHaveValue(30);
+  await reason.selectOptions(vacnet.id);
+  await expect.element(minutes).toHaveValue(null);
+  await screen.getByRole("button", { name: "Preview cooldown", exact: true }).click();
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("Enter a positive whole-minute remaining duration. Days, hours and minutes are additive.");
+  await reason.selectOptions(custom.id);
+  await minutes.fill("45");
+  await reason.selectOptions(vacnet.id);
+  await expect.element(minutes).toHaveValue(45);
 });

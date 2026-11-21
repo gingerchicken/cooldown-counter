@@ -459,12 +459,12 @@
       "id": "US-034",
       "title": "Resolve evidence that exceeds the estimate",
       "source": "../2-user-stories/US-034-obs-duration-conflict.md",
-      "implementation": "baseline",
+      "implementation": "alternative",
       "cases": [
         "REPORT-004"
       ],
-      "acceptance": "Over-total evidence warns, offers the first fitting step when present and cannot be saved above every step.",
-      "decisionNotes": ""
+      "acceptance": "Game timer evidence can exceed the estimate or every available tier. A custom ladder still validates its selected total.",
+      "decisionNotes": "The game-based model is documented in docs/data-model.md and the CS2 cooldown model review."
     },
     {
       "id": "US-035",
@@ -505,23 +505,23 @@
       "id": "US-038",
       "title": "Start with the designed offence catalogue",
       "source": "../2-user-stories/US-038-rule-seed-ladders.md",
-      "implementation": "baseline",
+      "implementation": "alternative",
       "cases": [
         "RULE-001"
       ],
-      "acceptance": "The five editable seed ladders match the recorded design baseline and do not fabricate account history.",
-      "decisionNotes": ""
+      "acceptance": "New fleets start with three ordinary reasons and two observation-only reasons, with no fabricated account history.",
+      "decisionNotes": "The game-based model is documented in docs/data-model.md and the CS2 cooldown model review."
     },
     {
       "id": "US-039",
       "title": "Predict escalation independently per account and offence",
       "source": "../2-user-stories/US-039-rule-predict-independent.md",
-      "implementation": "baseline",
+      "implementation": "alternative",
       "cases": [
         "MODEL-001"
       ],
-      "acceptance": "Accounts and offence types have independent histories, with one advance and a final-step cap.",
-      "decisionNotes": ""
+      "acceptance": "Ordinary reasons share one uncapped level on each account. Custom rules retain their independent bounded ladders.",
+      "decisionNotes": "The game-based model is documented in docs/data-model.md and the CS2 cooldown model review."
     },
     {
       "id": "US-040",
@@ -1494,13 +1494,6 @@
         ]
       },
       {
-        "id": "RQ-235",
-        "statement": "The system shall initialise VACLive with ordered durations of 1200, 10080 and 43200 minutes.",
-        "cases": [
-          "RULE-001"
-        ]
-      },
-      {
         "id": "RQ-236",
         "statement": "The system shall initialise Abandoning with ordered durations of 30, 120, 1440 and 10080 minutes.",
         "cases": [
@@ -1522,27 +1515,6 @@
         ]
       },
       {
-        "id": "RQ-239",
-        "statement": "The system shall initialise GriefReports with ordered durations of 120, 1440, 10080 and 43200 minutes.",
-        "cases": [
-          "RULE-001"
-        ]
-      },
-      {
-        "id": "RQ-240",
-        "statement": "The system shall maintain a separate ladder state for each account and offence-type pair.",
-        "cases": [
-          "MODEL-001"
-        ]
-      },
-      {
-        "id": "RQ-242",
-        "statement": "The system shall predict step one for an account and offence-type pair with no history.",
-        "cases": [
-          "MODEL-001"
-        ]
-      },
-      {
         "id": "RQ-243",
         "statement": "The system shall apply eligible decay before advancing an unoverridden observation.",
         "cases": [
@@ -1552,13 +1524,6 @@
       {
         "id": "RQ-244",
         "statement": "The system shall advance an unoverridden observation by one ladder step from its decayed state.",
-        "cases": [
-          "MODEL-001"
-        ]
-      },
-      {
-        "id": "RQ-245",
-        "statement": "The system shall cap advancement at the final configured ladder step.",
         "cases": [
           "MODEL-001"
         ]
@@ -7224,26 +7189,17 @@
         "acceptanceCondition": "For an account with two prior same-type events, the explanation reports two prior samples.",
         "evidence": [
           {
-            "kind": "frontend-test",
-            "path": "src/tracker/requirements.browser.test.tsx",
-            "selector": "identifies report accounts with initials and explains exact preview sample counts"
-          },
-          {
-            "kind": "backend-test",
-            "path": "../backend/tests/test_tracker_api.py",
-            "selector": "test_preview_counts_only_same_account_type_evidence_effective_at_its_time"
-          },
-          {
             "kind": "source",
-            "path": "src/tracker/ReportDialog.tsx"
+            "path": "../backend/tracker/services/reports.py"
           }
         ],
-        "disposition": "test_assertion",
-        "reason": "The previously identified source omission now has a concrete independent regression. Its passing proof requires the corresponding actual backend/unit/component report, not this ledger entry.",
+        "disposition": "user_alternative",
+        "reason": "History-based ordinary reports count all eligible ordinary events on the same account. Custom policies still count their own type.",
         "relatedCases": [
           "REPORT-001",
           "REPORT-002"
-        ]
+        ],
+        "decisionSource": "../docs/data-model.md"
       },
       {
         "id": "RQ-200",
@@ -8113,24 +8069,16 @@
         "acceptanceCondition": "The reference shows then holds after the final configured duration.",
         "evidence": [
           {
-            "kind": "frontend-test",
-            "path": "src/tracker/criteria-types.browser.test.tsx",
-            "selector": "[RQ-228 RQ-231 RQ-232 RQ-233 RQ-234 RQ-254 RQ-305 RQ-332] explains ordered, bounded and explicitly modelled current offence policies"
-          },
-          {
             "kind": "source",
-            "path": "src/tracker/TypeReference.tsx"
-          },
-          {
-            "kind": "source",
-            "path": "../backend/tracker/services/fleets.py"
+            "path": "../backend/tracker/prediction.py"
           }
         ],
-        "disposition": "test_assertion",
-        "reason": "The named real browser component regression independently asserts this narrow behavior. Actual matching component JSON results, including every required named assertion, are needed before it is counted as passed.",
+        "disposition": "user_alternative",
+        "reason": "Ordinary levels continue beyond the final duration band. Only custom ladders hold the level itself at the final step.",
         "relatedCases": [
           "RULE-001"
-        ]
+        ],
+        "decisionSource": "../docs/data-model.md"
       },
       {
         "id": "RQ-235",
@@ -8140,21 +8088,18 @@
         "evidence": [
           {
             "kind": "source",
-            "path": "src/tracker/TypeReference.tsx"
-          },
-          {
-            "kind": "source",
-            "path": "../backend/tracker/services/fleets.py"
+            "path": "../backend/tracker/services/catalogue.py"
           }
         ],
-        "disposition": "browser_assertion",
-        "reason": "The linked executable case contains an independent behavior assertion for this narrow criterion. Only a clean execution on every required browser may mark this mapped assertion passed.",
+        "disposition": "user_alternative",
+        "reason": "VACNet accepts observed timers. Valve does not publish the original three-stage sequence.",
         "relatedCases": [
           "RULE-001"
         ],
         "cases": [
           "RULE-001"
-        ]
+        ],
+        "decisionSource": "../docs/data-model.md"
       },
       {
         "id": "RQ-236",
@@ -8236,21 +8181,18 @@
         "evidence": [
           {
             "kind": "source",
-            "path": "src/tracker/TypeReference.tsx"
-          },
-          {
-            "kind": "source",
-            "path": "../backend/tracker/services/fleets.py"
+            "path": "../backend/tracker/services/catalogue.py"
           }
         ],
-        "disposition": "browser_assertion",
-        "reason": "The linked executable case contains an independent behavior assertion for this narrow criterion. Only a clean execution on every required browser may mark this mapped assertion passed.",
+        "disposition": "user_alternative",
+        "reason": "Griefing reports support warnings and observed cooldown timers. There is no verified current duration sequence.",
         "relatedCases": [
           "RULE-001"
         ],
         "cases": [
           "RULE-001"
-        ]
+        ],
+        "decisionSource": "../docs/data-model.md"
       },
       {
         "id": "RQ-240",
@@ -8260,21 +8202,18 @@
         "evidence": [
           {
             "kind": "source",
-            "path": "../backend/tracker/prediction.py"
-          },
-          {
-            "kind": "source",
             "path": "../backend/tracker/services/reports.py"
           }
         ],
-        "disposition": "browser_assertion",
-        "reason": "The linked executable case contains an independent behavior assertion for this narrow criterion. Only a clean execution on every required browser may mark this mapped assertion passed.",
+        "disposition": "user_alternative",
+        "reason": "Ordinary reasons advance one competitive level per fleet account. Only custom ladders retain separate escalation by reason.",
         "relatedCases": [
           "MODEL-001"
         ],
         "cases": [
           "MODEL-001"
-        ]
+        ],
+        "decisionSource": "../docs/data-model.md"
       },
       {
         "id": "RQ-241",
@@ -8283,24 +8222,16 @@
         "acceptanceCondition": "An account with no Abandoning history has stored state zero.",
         "evidence": [
           {
-            "kind": "backend-test",
-            "path": "../backend/tests/test_tracker_prediction.py",
-            "selector": "test_no_history_predicts_first_step"
-          },
-          {
-            "kind": "source",
-            "path": "../backend/tracker/prediction.py"
-          },
-          {
             "kind": "source",
             "path": "../backend/tracker/services/reports.py"
           }
         ],
-        "disposition": "test_assertion",
-        "reason": "The named backend, frontend unit or browser component test independently asserts this criterion. Its execution is not inferred from the full-stack Playwright report.",
+        "disposition": "user_alternative",
+        "reason": "An empty reason may inherit ordinary competitive history from another reason. Observation-only rules have no numeric state.",
         "relatedCases": [
           "MODEL-001"
-        ]
+        ],
+        "decisionSource": "../docs/data-model.md"
       },
       {
         "id": "RQ-242",
@@ -8310,21 +8241,18 @@
         "evidence": [
           {
             "kind": "source",
-            "path": "../backend/tracker/prediction.py"
-          },
-          {
-            "kind": "source",
             "path": "../backend/tracker/services/reports.py"
           }
         ],
-        "disposition": "browser_assertion",
-        "reason": "The linked executable case contains an independent behavior assertion for this narrow criterion. Only a clean execution on every required browser may mark this mapped assertion passed.",
+        "disposition": "user_alternative",
+        "reason": "An ordinary event uses shared account history. Only an empty progression predicts its first level.",
         "relatedCases": [
           "MODEL-001"
         ],
         "cases": [
           "MODEL-001"
-        ]
+        ],
+        "decisionSource": "../docs/data-model.md"
       },
       {
         "id": "RQ-243",
@@ -8383,20 +8311,17 @@
           {
             "kind": "source",
             "path": "../backend/tracker/prediction.py"
-          },
-          {
-            "kind": "source",
-            "path": "../backend/tracker/services/reports.py"
           }
         ],
-        "disposition": "browser_assertion",
-        "reason": "The linked executable case contains an independent behavior assertion for this narrow criterion. Only a clean execution on every required browser may mark this mapped assertion passed.",
+        "disposition": "user_alternative",
+        "reason": "An ordinary level can rise above four while its issued duration remains seven days. The final-step cap applies to custom ladders.",
         "relatedCases": [
           "MODEL-001"
         ],
         "cases": [
           "MODEL-001"
-        ]
+        ],
+        "decisionSource": "../docs/data-model.md"
       },
       {
         "id": "RQ-246",

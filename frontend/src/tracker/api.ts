@@ -167,6 +167,14 @@ export function typedTrackerApi(
           })
           .then(unwrap),
       ),
+    /** Record a griefing warning independently of issued penalties and escalation. */
+    recordWarning: (fleetId: string, body: components["schemas"]["WarningInputRequest"]) =>
+      checked(
+        client.http.POST("/api/fleets/{fleet_id}/warnings/", {
+          params: { path: { fleet_id: fleetId } },
+          body,
+        }).then(unwrap),
+      ),
     /** Record body's reviewed offence/evidence in fleetId using its stable retry UUIDs. */
     record: (fleetId: string, body: EventInput) =>
       checked(

@@ -1,3 +1,4 @@
+import { isMinimumDuration } from "./mechanisms";
 import { useCallback, useState } from "react";
 import type { Account, CooldownEvent } from "./types";
 import type { TrackerApi } from "./api";
@@ -8,7 +9,7 @@ import { CooldownHistory } from "./CooldownHistory";
 import { ObservationDialog } from "./ObservationDialog";
 
 /**
- * Load accountId inside fleetId through api, preserving independent predictions and saved history.
+ * Load accountId inside fleetId through api, preserving policy-specific predictions and saved history.
  * canWrite controls affordances; the backend remains authoritative for every mutation.
  * onBack/onEdit/onReport delegate navigation and editor ownership; onChanged refreshes fleet totals.
  */
@@ -159,7 +160,7 @@ export function AccountDetailScreen({
             <section className="panel prediction-card">
               <h3>Predicted next cooldown</h3>
               <p className="muted">
-                Per offence type · server-derived estimates
+                Estimates from the recorded account history
               </p>
               <div className="prediction-grid">
                 {account.predictions.map((prediction) => {
@@ -171,16 +172,24 @@ export function AccountDetailScreen({
                       <strong
                         className={`large-duration ${severity(prediction.total_minutes)}`}
                       >
+                        {isMinimumDuration(
+                          prediction.level_is_lower_bound,
+                          prediction.total_minutes,
+                        ) && "At least "}
                         {formatDuration(prediction.total_minutes)}
                       </strong>
-                      <p>
-                        Step {prediction.step} of {prediction.total_steps}
-                      </p>
+                      {prediction.step !== null && (
+                        <p>
+                          {prediction.mechanism === "ordinary"
+                            ? `Shared competitive level ${prediction.step}${prediction.level_is_lower_bound ? " or higher" : ""}`
+                            : `Step ${prediction.step} of ${prediction.total_steps}`}
+                        </p>
+                      )}
                       <p className="small">{prediction.transition}</p>
                       <p className="small muted">
-                        {prediction.sample_count} saved offences · last S
-                        {prediction.recorded_step} · current S
-                        {prediction.base_step}
+                        {prediction.sample_count} saved offences
+                        {prediction.base_step !== null &&
+                          ` · last S${prediction.recorded_step}${prediction.level_is_lower_bound ? "+" : ""} · current S${prediction.base_step}${prediction.level_is_lower_bound ? "+" : ""}`}
                       </p>
                       {prediction.next_decay_at && (
                         <p className="small muted">
@@ -200,19 +209,34 @@ export function AccountDetailScreen({
               </div>
               {!account.event_count && (
                 <p>
-                  No history on this account. A first offence uses that ladder's
-                  first step.
+                  No history on this account. Prior cooldowns outside this fleet
+                  can affect estimates.
                 </p>
               )}
               {account.active_until && (
                 <p>
                   Currently on cooldown until{" "}
                   {formatTimestamp(account.active_until)}. Clean time cannot
-                  begin before the latest outstanding expiry.
+                  begin before the latest outstanding expiry for the relevant
+                  ladder.
                 </p>
               )}
             </section>
           </div>
+          {account.warnings.length > 0 && (
+            <section aria-label="Griefing warnings">
+              <h3>Griefing warnings</h3>
+              <ul>
+                {account.warnings.map((warning) => (
+                  // A warning retains its reporter and observation time outside the issued-cooldown count.
+                  <li key={warning.id}>
+                    {formatTimestamp(warning.observed_at)} · {warning.type_name}{" "}
+                    · {warning.created_by}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <CooldownHistory
             events={account.events}
             canWrite={canWrite}
