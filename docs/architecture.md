@@ -4,16 +4,27 @@
 
 The [ER model](data-model.md) defines the current product boundaries. `tracker`
 owns fleet membership, exact Steam-account identities, immutable policy versions,
-saved cooldown assessments, append-only observations and attributed audit entries.
+saved cooldown assessments, append-only observations, separate grief warnings
+and attributed audit entries.
 The user selected separate fleets with membership permissions and preservation
 of historical rules/evidence. Django's existing session login remains the identity
 boundary; membership determines what that identity can read and change.
 
-Pure prediction functions accept explicit aware timestamps and saved same-ladder
-history. They have no database or browser dependency. Command services enforce
-cross-row invariants inside transactions, while query projections provide typed
-read models. Views are thin permission/serialization boundaries. Published policy
-versions and saved assessments are not edited through application services.
+The immutable policy revision identifies the mechanism. Report commands and
+query projections use the same rules for selecting history. An ordinary CS2
+reason reads ordinary events from the same tracked account across all reasons.
+A custom reason reads its own custom events. The pure Python predictor reduces
+the stored level for elapsed clean windows, then maps the next level to a
+duration. For ordinary events only the duration stops increasing at level four.
+The calendar emits one set of ordinary markers for each account. An uncertain
+level suppresses those dated markers.
+
+VACNet and griefing notices accept observed timers without a model duration.
+The account and calendar projections use the latest game timer to estimate
+release. The original predicted release, when available, stays on the saved
+assessment. Custom policies retain their published duration and expiry rules.
+Warnings use a separate command and table so entering one cannot start a
+cooldown. See the [mechanism and upgrade rules](data-model.md#policy-mechanisms-and-upgrades).
 
 Account row locks serialize evidence revisions and idempotent event/observation
 acceptance. Fleet row locks protect the last-owner invariant. Policy publication

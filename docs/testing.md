@@ -26,7 +26,10 @@ produce a complete acceptance claim.
 The backend app separates pure prediction from persistence and HTTP. Pure tests
 cover exact clean-window boundaries, floors/caps, all supported decay modes,
 manual overrides, overlap anchors, stable equal-time ordering, invalid inputs and
-datetime overflow. Model tests cover database constraints, historical references
+datetime overflow. Game-policy regressions include switching ordinary reasons,
+repeating a seven-day penalty at level five and forecasting after two clean weeks.
+Other cases cover uncertain imported levels, a 90-day VACNet party restriction,
+timer corrections and griefing warnings that leave an account available. Model tests cover database constraints, historical references
 and cross-row evidence consistency. Services/API tests cover permissions,
 validation, rollback, immutable rule history, previews, stale writes, retries,
 archival, read projections and audit attribution.
@@ -165,6 +168,30 @@ review. Application code must still render user text literally and retain server
 permission checks independently of browser tests.
 
 ## Latest local validation
+
+The game-model update adds regression coverage across the predictor, PostgreSQL
+writes, read projections and browser controls. A populated database upgraded
+from tracker migration 0001 retained its custom rule, prediction and timer
+reading. Explicitly adopting the ordinary mechanism created a new policy version.
+These checks exercise the app against the published rules and synthetic account
+histories. They do not measure accuracy against a live Steam account.
+
+Validated on 2026-11-21 using Docker:
+
+| Gate | Result |
+| --- | --- |
+| PostgreSQL backend | 239 passed, 10 fixture-dependent deployment checks skipped, 96% statement/branch coverage |
+| Deployment contracts with rendered fixtures | 30 passed |
+| Frontend unit and tooling tests | 83 unit tests and 25 tooling tests passed |
+| Chromium component tests | 92 passed |
+| Full-stack Chromium, Firefox and WebKit | 153 passed |
+| Combined acceptance | All 65 selected outcomes, 161 full-stack mappings and 176 lower-layer mappings passed |
+
+The ledger keeps the other 26 original criteria as explicit alternatives or
+assumptions. OpenAPI and TypeScript regeneration produced identical output on
+a second run. Lint, type checks, the Vite build and Pages compilation passed.
+
+### Earlier baseline
 
 Validated on 2026-11-13 using the Docker toolchain:
 

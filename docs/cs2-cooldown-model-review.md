@@ -2,6 +2,8 @@
 
 Reviewed 21 November 2026 against the defaults on main at commit `7327b42`. This review covers cooldowns issued in Valve matchmaking. It compares the tracker with Valve's published rules. No live account history or private matchmaking data was available for comparison.
 
+The findings below describe the reviewed commit. For the implemented game rules, observed timers and existing-fleet upgrade instructions, see the [current data model](data-model.md#time-and-history).
+
 ## Verdict
 
 **The tracker gets the four ordinary penalty durations right. It can predict the wrong one for a particular account.** The two clearest reasons are that the tracker keeps a separate level for each offence type and stops advancing that level when it reaches the last duration. Valve describes an ordinary competitive level attached to the account, and says that a seven-day penalty can represent level four or higher. These differences matter even with perfect timestamps and a complete history. [Steam Support cooldown FAQ][faq] · [Tracker history selection][reports] · [Prediction engine][engine]
@@ -71,11 +73,11 @@ The project already records ownership of the initial ladders and independent dec
 [premier]: https://steamcommunity.com/games/CSGO/announcements/detail/3687939575941624937
 [other-kick]: https://steamcommunity.com/games/CSGO/announcements/detail/4124805233776026715
 [client]: https://github.com/SteamDatabase/GameTracking-CS2/blob/694f81f05cfcd1994ea9ef6baa31d4583dc1d63b/game/csgo/pak01_dir/resource/csgo_english.txt#L45723-L45744
-[seeds]: ../backend/tracker/services/catalogue.py
-[reports]: ../backend/tracker/services/reports.py
-[engine]: ../backend/tracker/prediction.py
-[events]: ../backend/tracker/models/events.py
-[queries]: ../backend/tracker/queries.py
-[tests]: ../backend/tests/test_tracker_prediction.py
-[model]: data-model.md#time-and-history
+[seeds]: https://github.com/gingerchicken/cooldown-counter/blob/7327b4228084558d443287618095328572f54477/backend/tracker/services/catalogue.py
+[reports]: https://github.com/gingerchicken/cooldown-counter/blob/7327b4228084558d443287618095328572f54477/backend/tracker/services/reports.py
+[engine]: https://github.com/gingerchicken/cooldown-counter/blob/7327b4228084558d443287618095328572f54477/backend/tracker/prediction.py
+[events]: https://github.com/gingerchicken/cooldown-counter/blob/7327b4228084558d443287618095328572f54477/backend/tracker/models/events.py
+[queries]: https://github.com/gingerchicken/cooldown-counter/blob/7327b4228084558d443287618095328572f54477/backend/tracker/queries.py
+[tests]: https://github.com/gingerchicken/cooldown-counter/blob/7327b4228084558d443287618095328572f54477/backend/tests/test_tracker_prediction.py
+[model]: https://github.com/gingerchicken/cooldown-counter/blob/7327b4228084558d443287618095328572f54477/docs/data-model.md#time-and-history
 [q053]: ../3-requirements/open-questions.md#q-053

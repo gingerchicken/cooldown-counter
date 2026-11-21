@@ -55,7 +55,7 @@ Use `./local-dev.sh user` when you need a Django superuser.
 
 Open **[localhost:5173](http://localhost:5173)** and sign in with your new account.
 
-1. Create a fleet. It starts with five editable offence ladders and no accounts.
+1. Create a fleet. It starts with five offence types and no accounts.
 2. Review the default rules for your fleet.
 3. Add a Steam account using its exact 17-digit SteamID and a readable tag.
 4. Record its first cooldown, review the prediction and save the observation.
@@ -102,9 +102,27 @@ The supplied defaults bind development ports to the host loopback interface.
   Retrying the same accepted request does not create duplicate evidence.
 - **Attributed changes.** Inspect fleet audit entries to see who made a change.
 
-Rule defaults are editable model inputs, not verified current Valve policy.
-The [CS2 cooldown model review](docs/cs2-cooldown-model-review.md) compares
-the five defaults with Valve's published rules and shows where predictions diverge.
+**Ordinary competitive cooldowns** share one level across Abandoning, Team
+Damage and Kicking for each tracked account. Repeats can raise the level above
+four while the duration stays at seven days. Importing a seven-day penalty by
+manual override records level four or higher and suppresses an exact recovery
+date. A first prediction assumes the recorded history is complete.
+
+**VACNet and grief reports** use the observed game timer. Enter the time you saw
+it and the remaining minutes. You can record whether VACNet flagged the account
+or someone it queued with. A griefing warning can be logged without creating
+a restriction. A new game timer can move the displayed expiry while preserving the
+original prediction and previous readings.
+
+**Existing fleets** keep their custom rules and history after migration. To
+adopt shared competitive rules, edit each applicable offence type, select the
+ordinary competitive mechanism and save. Select the VACNet or griefing
+mechanism for those notices. The new policy applies to future reports. Earlier
+custom events remain available as recorded and do not seed a hidden game level. Add other qualifying reasons, such as an issued inactivity cooldown,
+with the ordinary competitive mechanism to share the same progression.
+
+See the [CS2 cooldown model review](docs/cs2-cooldown-model-review.md) for the
+Valve sources and the limits of these predictions.
 All date/time inputs are labelled **UTC**. Durations use whole minutes.
 See the [time and history rules](docs/data-model.md#time-and-history) for decay,
 overlap, backdated evidence and validation behavior.
