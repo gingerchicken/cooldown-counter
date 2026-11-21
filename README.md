@@ -103,6 +103,8 @@ The supplied defaults bind development ports to the host loopback interface.
 - **Attributed changes.** Inspect fleet audit entries to see who made a change.
 
 Rule defaults are editable model inputs, not verified current Valve policy.
+The [CS2 cooldown model review](docs/cs2-cooldown-model-review.md) compares
+the five defaults with Valve's published rules and shows where predictions diverge.
 All date/time inputs are labelled **UTC**. Durations use whole minutes.
 See the [time and history rules](docs/data-model.md#time-and-history) for decay,
 overlap, backdated evidence and validation behavior.
